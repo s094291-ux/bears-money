@@ -576,6 +576,63 @@ async function undoInstallmentPaid(id){
   await loadAll();render();
 }
 
+function openHistoricalPaymentModal(id,periodNumber){
+  const x=installments.find(a=>a.id===id);if(!x)return;
+  if(!accounts.length){alert('請先到「帳戶」新增至少一個付款帳戶。');setPage('accounts');return;}
+  const existing=getInstallmentPayments(id).find(p=>Number(p.period_number)===periodNumber);
+  if(existing){openInstallmentDetail(id);return;}
+  const dueDate=addMonths(x.start_date,periodNumber-1,x.due_day);
+  openModal(`<div class="modal-head"><div><h3>📝 補登第 ${periodNumber} 期</h3><div class="small">${esc(x.name)} · 原定 ${dateText(dueDate)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div>
+  <form onsubmit="saveHistoricalPayment(event,'${id}',${periodNumber})">
+    <div class="form-grid">
+      <div><label>實際繳費日期</label><input id="histDate" class="input" type="date" value="${dueDate||today()}" required></div>
+      <div><label>實際繳費金額</label><input id="histAmount" class="input" type="number" min="0" value="${x.period_amount}" required></div>
+      <div><label>付款帳戶</label><select id="histAccount" class="select" required>${selectAccounts()}</select></div>
+      <div><label>備註</label><input id="histNote" class="input" placeholder="例如 舊資料補登"></div>
+    </div>
+    <label>📸 繳費明細</label>
+    <input id="histReceipt" class="input" type="file" accept="image/jpeg,image/png,image/webp">
+    <div class="small">可上傳 JPG、PNG、WebP，單張最大 5 MB。這筆補登不會再次增加已繳期數。</div>
+    <button class="primary" id="histSubmit">✓ 儲存歷史明細</button>
+  </form>`);
+}
+
+async function saveHistoricalPayment(e,id,periodNumber){
+  e.preventDefault();
+  const btn=document.getElementById('histSubmit');btn.disabled=true;btn.textContent='儲存中…';
+  const x=installments.find(a=>a.id===id);if(!x)return;
+  const paymentDate=document.getElementById('histDate').value;
+  const amount=Number(document.getElementById('histAmount').value);
+  const accountId=document.getElementById('histAccount').value;
+  const note=document.getElementById('histNote').value.trim()||`${x.name}｜第${periodNumber}期｜歷史補登`;
+  const file=document.getElementById('histReceipt').files[0];
+  let receiptPath=null;
+  try{
+    if(file){
+      if(file.size>5*1024*1024)throw new Error('圖片超過 5 MB，請換一張較小的圖片。');
+      if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('只允許 JPG、PNG、WebP 圖片。');
+      const ext=file.type==='image/jpeg'?'jpg':file.type.split('/')[1];
+      receiptPath=`${currentUser.id}/${id}/${periodNumber}-history-${Date.now()}.${ext}`;
+      const up=await db.storage.from('payment-receipts').upload(receiptPath,file,{contentType:file.type,upsert:false});
+      if(up.error)throw up.error;
+    }
+    const pay=await db.from('installment_payments').insert({
+      user_id:currentUser.id,installment_id:id,period_number:periodNumber,
+      payment_date:paymentDate,amount,account_id:accountId,note,receipt_path:receiptPath
+    });
+    if(pay.error){
+      if(receiptPath)await db.storage.from('payment-receipts').remove([receiptPath]);
+      throw pay.error;
+    }
+    closeModal();await loadAll();render();
+    // 回到分期詳細資料，讓使用者立刻看到剛補上的日期／圖片
+    setTimeout(()=>openInstallmentDetail(id),50);
+  }catch(err){
+    console.error(err);alert(err.message||'歷史明細儲存失敗，請再試一次。');
+    btn.disabled=false;btn.textContent='✓ 儲存歷史明細';
+  }
+}
+
 async function viewReceipt(path){
   if(!path)return;
   const {data,error}=await db.storage.from('payment-receipts').createSignedUrl(path,300);
@@ -594,7 +651,7 @@ function openInstallmentDetail(id){
     const isPaid=!!p || n<=paid;
     const dueDate=addMonths(x.start_date,n-1,x.due_day);
     const statusHtml=p?`<span class="pill ok">✓ 已繳</span><div class="small">實際 ${dateText(p.payment_date)}</div>`:isPaid?`<span class="pill ok">✓ 已繳</span><div class="small">歷史補登</div>`:'<span class="pill warn">待繳</span>';
-    const receiptHtml=p?.receipt_path?`<button class="ghost" onclick="viewReceipt('${p.receipt_path}')">📸 查看</button>`:'-';
+    const receiptHtml=p?.receipt_path?`<button class="ghost" onclick="viewReceipt('${p.receipt_path}')">📸 查看</button>`:isPaid?`<button class="ghost" onclick="closeModal();openHistoricalPaymentModal('${id}',${n})">📝 補登明細</button>`:'-';
     rows+=`<tr><td>第 ${n} 期</td><td>${dateText(dueDate)}</td><td>${money(p?.amount??x.period_amount)}</td><td>${statusHtml}</td><td>${receiptHtml}</td></tr>`;
   }
   openModal(`<div class="modal-head"><div><h3 style="margin:0">${esc(x.name)}</h3><div class="small">${paid}/${x.total_periods} 期 · 剩餘 ${money(x.remaining_amount)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div><div class="table-wrap" style="margin-top:14px"><table class="table"><thead><tr><th>期數</th><th>預定日</th><th>金額</th><th>狀態</th><th>明細</th></tr></thead><tbody>${rows}</tbody></table></div><div class="actions" style="margin-top:14px">${paid<x.total_periods?`<button class="primary" style="width:auto;margin:0" onclick="closeModal();openPaymentModal('${id}')">💰 紀錄下一期付款</button>`:''}${paid>0?`<button class="ghost" onclick="closeModal();undoInstallmentPaid('${id}')">↩ 撤銷最後一期</button>`:''}<button class="ghost" onclick="closeModal();openInstallmentModal('${id}')">修改分期</button></div>`);
