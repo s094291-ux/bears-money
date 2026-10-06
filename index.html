@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f4eee7" />
+  <title>🐻‘s Money</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root{--bg:#f7f3ee;--card:#fffdf9;--text:#3f3934;--muted:#8d837a;--line:#e8dfd6;--accent:#9b806b;--accent2:#d7c2ae;--green:#738b73;--red:#b47770;--yellow:#b28c55;--shadow:0 10px 30px rgba(91,70,52,.08)}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","PingFang TC",sans-serif}
+    button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}.hidden{display:none!important}
+    .auth{min-height:100vh;display:grid;place-items:center;padding:24px}.auth-card{width:min(430px,100%);background:var(--card);padding:32px;border-radius:28px;box-shadow:var(--shadow)}
+    .brand{text-align:center;font-size:28px;font-weight:800;margin-bottom:8px}.sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:28px}
+    .tabs{display:flex;background:#f0e9e2;padding:4px;border-radius:14px;margin-bottom:20px}.tabs button{flex:1;padding:10px;border-radius:10px;background:transparent;color:var(--muted)}.tabs button.active{background:white;color:var(--text);box-shadow:0 2px 8px #0000000b}
+    label{display:block;font-size:13px;color:var(--muted);margin:14px 0 7px}.input,.select,.textarea{width:100%;border:1px solid var(--line);background:white;border-radius:12px;padding:12px;color:var(--text);outline:none}.textarea{min-height:80px;resize:vertical}
+    .primary{width:100%;background:var(--accent);color:white;padding:13px;border-radius:13px;font-weight:700;margin-top:18px}.ghost{background:#eee7df;color:var(--text);padding:10px 14px;border-radius:11px}.danger{background:#f5e2df;color:#9d5b55;padding:9px 12px;border-radius:10px}
+    .app{min-height:100vh}.topbar{position:sticky;top:0;z-index:5;background:#f7f3eedf;backdrop-filter:blur(14px);border-bottom:1px solid var(--line);padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
+    .topbrand{font-weight:800;font-size:20px}.user{font-size:12px;color:var(--muted);margin-right:8px}
+    .layout{display:grid;grid-template-columns:220px 1fr;max-width:1250px;margin:auto}.sidebar{padding:22px 14px;border-right:1px solid var(--line);min-height:calc(100vh - 65px)}.navbtn{width:100%;text-align:left;background:transparent;color:var(--muted);padding:12px;border-radius:12px;margin:2px 0}.navbtn.active,.navbtn:hover{background:#eee7df;color:var(--text)}
+    main{padding:24px;min-width:0}.page-title{font-size:25px;font-weight:800;margin:0}.page-sub{color:var(--muted);font-size:13px;margin-top:4px}
+    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:20px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow)}.metric-label{font-size:12px;color:var(--muted)}.metric{font-size:25px;font-weight:800;margin-top:7px}.metric.green{color:var(--green)}.metric.red{color:var(--red)}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}.section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.section-head h3{margin:0;font-size:16px}
+    .list{display:grid;gap:8px}.row{display:flex;justify-content:space-between;align-items:center;padding:13px;border:1px solid var(--line);border-radius:13px;background:#fff}.row-left{min-width:0}.row-title{font-weight:650}.small{font-size:12px;color:var(--muted);margin-top:3px}.amount{font-weight:750}.income{color:var(--green)}.expense{color:var(--red)}
+    .pill{font-size:11px;padding:5px 8px;border-radius:999px;background:#eee7df;color:var(--muted)}.pill.ok{background:#e4eee4;color:#617861}.pill.warn{background:#f5ead8;color:#8d6b37}.pill.bad{background:#f4e1df;color:#985d57}
+    .progress{height:8px;background:#eee7df;border-radius:999px;overflow:hidden;margin-top:10px}.progress>div{height:100%;background:var(--accent);border-radius:999px}
+    .table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;font-size:13px}.table th,.table td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);white-space:nowrap}.table th{color:var(--muted);font-weight:600}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}.modal{position:fixed;inset:0;background:#3f393455;display:grid;place-items:center;padding:18px;z-index:20}.modal-card{width:min(620px,100%);max-height:90vh;overflow:auto;background:var(--card);border-radius:22px;padding:22px}.modal-head{display:flex;justify-content:space-between;align-items:center}.modal-head h3{margin:0}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}.full{grid-column:1/-1}
+    .fab{position:fixed;right:20px;bottom:20px;width:58px;height:58px;border-radius:50%;background:var(--accent);color:white;font-size:25px;box-shadow:0 10px 25px #0002;z-index:10}.mobile-nav{display:none}
+    @media(max-width:850px){.layout{display:block}.sidebar{display:none}main{padding:18px 14px 90px}.cards{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.mobile-nav{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fffdf9eF;backdrop-filter:blur(12px);border-top:1px solid var(--line);z-index:9;justify-content:space-around;padding:8px 4px}.mobile-nav button{background:transparent;color:var(--muted);font-size:11px;padding:7px}.mobile-nav button.active{color:var(--text);font-weight:700}.topbar{padding:12px 14px}.user{display:none}}
+    @media(max-width:520px){.cards{grid-template-columns:1fr 1fr}.metric{font-size:20px}.form-grid{grid-template-columns:1fr}.full{grid-column:auto}}
+  </style>
+</head>
+<body>
+<div id="authView" class="auth">
+  <div class="auth-card">
+    <div class="brand">🐻‘s Money</div><div class="sub">把錢放在心上，也把生活記下來。</div>
+    <div class="tabs"><button id="loginTab" class="active" onclick="switchAuth('login')">登入</button><button id="signupTab" onclick="switchAuth('signup')">註冊</button></div>
+    <form id="authForm">
+      <label>Email</label><input id="authEmail" class="input" type="email" required placeholder="you@example.com">
+      <label>密碼</label><input id="authPassword" class="input" type="password" minlength="6" required placeholder="至少 6 碼">
+      <div id="nameWrap" class="hidden"><label>暱稱</label><input id="authName" class="input" placeholder="例如 Luby"></div>
+      <button class="primary" id="authBtn">登入</button>
+    </form>
+    <div id="authMsg" class="small" style="text-align:center;margin-top:12px"></div>
+  </div>
+</div>
+
+<div id="appView" class="app hidden">
+  <div class="topbar"><div class="topbrand">🐻‘s Money</div><div><span class="user" id="userEmail"></span><button class="ghost" onclick="logout()">登出</button></div></div>
+  <div class="layout">
+    <aside class="sidebar">
+      <button class="navbtn active" data-page="dashboard">🏠 總覽</button>
+      <button class="navbtn" data-page="transactions">🧾 記帳</button>
+      <button class="navbtn" data-page="accounts">🏦 帳戶</button>
+      <button class="navbtn" data-page="preorders">🛍️ 預購／待付款</button>
+      <button class="navbtn" data-page="installments">💳 分期管理</button>
+      <button class="navbtn" data-page="bills">🧾 固定繳費</button>
+      <button class="navbtn" data-page="goals">🎯 儲蓄目標</button>
+    </aside>
+    <main id="main"></main>
+  </div>
+  <div class="mobile-nav">
+    <button data-page="dashboard">🏠<br>總覽</button><button data-page="transactions">🧾<br>記帳</button><button data-page="preorders">🛍️<br>預購</button><button data-page="installments">💳<br>分期</button><button data-page="accounts">🏦<br>帳戶</button>
+  </div>
+  <button class="fab" id="fab" onclick="quickAdd()">＋</button>
+</div>
+
+<div id="modal" class="modal hidden" onclick="if(event.target.id==='modal')closeModal()"><div class="modal-card" id="modalCard"></div></div>
+
+<script>
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentUser=null, currentPage='dashboard', accounts=[], transactions=[], preorders=[], installments=[], bills=[], goals=[];
+
+const money = n => new Intl.NumberFormat('zh-TW',{style:'currency',currency:'TWD',maximumFractionDigits:0}).format(Number(n)||0);
+const dateText = d => d ? new Date(d+'T00:00:00').toLocaleDateString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit'}) : '-';
+const today = () => new Date().toISOString().slice(0,10);
+const esc = s => String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+const pct=(a,b)=>b?Math.min(100,Math.max(0,(a/b)*100)):0;
+
+async function init(){
+  const {data:{session}}=await db.auth.getSession();
+  if(session) showApp(session.user); else showAuth();
+  db.auth.onAuthStateChange((_e,s)=>{ if(s) showApp(s.user); else showAuth(); });
+}
+function showAuth(){document.getElementById('authView').classList.remove('hidden');document.getElementById('appView').classList.add('hidden')}
+async function showApp(user){currentUser=user;document.getElementById('authView').classList.add('hidden');document.getElementById('appView').classList.remove('hidden');document.getElementById('userEmail').textContent=user.email;await loadAll();render()}
+function switchAuth(mode){document.getElementById('loginTab').classList.toggle('active',mode==='login');document.getElementById('signupTab').classList.toggle('active',mode==='signup');document.getElementById('nameWrap').classList.toggle('hidden',mode!=='signup');document.getElementById('authBtn').textContent=mode==='signup'?'註冊':'登入';document.getElementById('authForm').dataset.mode=mode}
+document.getElementById('authForm').addEventListener('submit',async e=>{e.preventDefault();const mode=e.currentTarget.dataset.mode||'login';const email=authEmail.value.trim(),password=authPassword.value;authMsg.textContent='處理中…';let r;if(mode==='signup'){r=await db.auth.signUp({email,password,options:{data:{name:authName.value.trim()}}})}else r=await db.auth.signInWithPassword({email,password});if(r.error)authMsg.textContent=r.error.message;else authMsg.textContent=mode==='signup'?'註冊成功，若有要求請到信箱完成驗證。':'登入成功！'});
+
+async function logout(){await db.auth.signOut()}
+
+async function loadAll(){
+  const tables=[['accounts','accounts'],['transactions','transactions'],['preorders','preorders'],['installments','installments'],['bills','bills'],['goals','goals']];
+  for(const [t,k] of tables){const {data,error}=await db.from(t).select('*').order('created_at',{ascending:false});if(error){console.error(t,error);continue}window[k]=data||[]}
+  accounts=window.accounts;transactions=window.transactions;preorders=window.preorders;installments=window.installments;bills=window.bills;goals=window.goals;
+}
+function setPage(p){currentPage=p;document.querySelectorAll('.navbtn,.mobile-nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===p));render()}
+document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>setPage(b.dataset.page)));
+
+function render(){const m=document.getElementById('main');({dashboard:renderDashboard,transactions:renderTransactions,accounts:renderAccounts,preorders:renderPreorders,installments:renderInstallments,bills:renderBills,goals:renderGoals}[currentPage]||renderDashboard)();}
+
+function monthRange(){const d=new Date();return {start:new Date(d.getFullYear(),d.getMonth(),1).toISOString().slice(0,10),end:new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10)}}
+function monthStats(){const {start,end}=monthRange();const t=transactions.filter(x=>x.date>=start&&x.date<=end);let income=0,expense=0;for(const x of t){if(x.type==='income')income+=Number(x.amount);if(x.type==='expense')expense+=Number(x.amount)}return {income,expense,balance:income-expense,t}}
+function accountBalance(a){return Number(a.opening_balance||0)+transactions.filter(t=>t.account_id===a.id&&t.type!=='transfer').reduce((s,t)=>s+(t.type==='income'?Number(t.amount):-Number(t.amount)),0)+transactions.filter(t=>t.type==='transfer'&&t.account_id===a.id).reduce((s,t)=>s+(t.transfer_direction==='in'?Number(t.amount):-Number(t.amount)),0)}
+function committed(){const po=preorders.filter(x=>!['paid','cancelled'].includes(x.status)).reduce((s,x)=>s+Math.max(0,Number(x.total_amount)-Number(x.paid_amount||0)),0);const ins=installments.filter(x=>x.status==='active').reduce((s,x)=>s+Number(x.remaining_amount||0),0);const bi=bills.filter(x=>x.status!=='paid').reduce((s,x)=>s+Number(x.amount),0);return {po,ins,bi,total:po+ins+bi}}
+function renderDashboard(){
+  const s=monthStats(), totalAssets=accounts.reduce((a,x)=>a+accountBalance(x),0), c=committed();
+  m.innerHTML=`<div class="page-title">🐻‘s Money</div><div class="page-sub">你的私人財務中控台 · ${new Date().toLocaleDateString('zh-TW',{year:'numeric',month:'long'})}</div>
+  <div class="cards"><div class="card"><div class="metric-label">本月收入</div><div class="metric green">${money(s.income)}</div></div><div class="card"><div class="metric-label">本月支出</div><div class="metric red">${money(s.expense)}</div></div><div class="card"><div class="metric-label">本月結餘</div><div class="metric">${money(s.balance)}</div></div><div class="card"><div class="metric-label">目前總資產</div><div class="metric">${money(totalAssets)}</div></div></div>
+  <div class="grid2"><div class="card"><div class="section-head"><h3>⚠️ 未來待支付</h3></div><div class="list">
+    <div class="row"><div><div class="row-title">🛍️ 預購／待付款</div></div><div class="amount">${money(c.po)}</div></div>
+    <div class="row"><div><div class="row-title">💳 分期剩餘</div></div><div class="amount">${money(c.ins)}</div></div>
+    <div class="row"><div><div class="row-title">🧾 待繳帳單</div></div><div class="amount">${money(c.bi)}</div></div>
+    <div class="row"><div><div class="row-title">承諾支出合計</div></div><div class="amount expense">${money(c.total)}</div></div></div></div>
+    <div class="card"><div class="section-head"><h3>🎯 儲蓄目標</h3><button class="ghost" onclick="setPage('goals')">查看全部</button></div>${goals.slice(0,3).map(g=>`<div style="margin:12px 0"><div style="display:flex;justify-content:space-between"><b>${esc(g.name)}</b><span class="small">${money(g.current_amount)} / ${money(g.target_amount)}</span></div><div class="progress"><div style="width:${pct(g.current_amount,g.target_amount)}%"></div></div></div>`).join('')||'<div class="small">還沒有儲蓄目標</div>'}</div></div>
+  <div class="card" style="margin-top:16px"><div class="section-head"><h3>🧾 最近交易</h3><button class="ghost" onclick="setPage('transactions')">查看全部</button></div><div class="list">${transactions.slice(0,8).map(t=>transactionRow(t)).join('')||'<div class="small">還沒有記帳資料</div>'}</div></div>`;
+}
+function transactionRow(t){return `<div class="row"><div class="row-left"><div class="row-title">${esc(t.category||'未分類')}</div><div class="small">${dateText(t.date)}${t.note?' · '+esc(t.note):''}</div></div><div class="amount ${t.type==='income'?'income':'expense'}">${t.type==='income'?'+':'-'}${money(t.amount)}</div></div>`}
+
+function renderTransactions(){m.innerHTML=`<div class="section-head"><div><div class="page-title">🧾 記帳</div><div class="page-sub">所有收入、支出與轉帳</div></div><button class="primary" style="width:auto;margin:0" onclick="openTransactionModal()">＋ 新增</button></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>日期</th><th>類型</th><th>分類</th><th>帳戶</th><th>金額</th><th>備註</th><th></th></tr></thead><tbody>${transactions.map(t=>`<tr><td>${dateText(t.date)}</td><td>${t.type==='income'?'收入':t.type==='expense'?'支出':'轉帳'}</td><td>${esc(t.category||'-')}</td><td>${esc(accounts.find(a=>a.id===t.account_id)?.name||'-')}</td><td class="${t.type==='income'?'income':'expense'}">${t.type==='income'?'+':'-'}${money(t.amount)}</td><td>${esc(t.note||'')}</td><td><button class="danger" onclick="deleteRecord('transactions','${t.id}')">刪除</button></td></tr>`).join('')}</tbody></table></div></div>`}
+function renderAccounts(){m.innerHTML=`<div class="section-head"><div><div class="page-title">🏦 我的帳戶</div><div class="page-sub">管理現金、銀行、信用卡等資金</div></div><button class="primary" style="width:auto;margin:0" onclick="openAccountModal()">＋ 新增帳戶</button></div><div class="cards">${accounts.map(a=>`<div class="card"><div class="metric-label">${esc(a.type||'帳戶')}</div><div class="metric">${money(accountBalance(a))}</div><div style="display:flex;justify-content:space-between;margin-top:10px"><b>${esc(a.name)}</b><button class="danger" onclick="deleteRecord('accounts','${a.id}')">刪除</button></div></div>`).join('')}</div>`}
+function renderPreorders(){m.innerHTML=`<div class="section-head"><div><div class="page-title">🛍️ 預購／待付款</div><div class="page-sub">已經承諾要花，但還沒完全付清的錢</div></div><button class="primary" style="width:auto;margin:0" onclick="openPreorderModal()">＋ 新增預購</button></div><div class="list">${preorders.map(x=>{const remain=Math.max(0,Number(x.total_amount)-Number(x.paid_amount||0));const st={waiting:'等待到貨',partial:'部分付款',unpaid:'尚未付款',paid:'已付清',cancelled:'已取消'}[x.status]||x.status;return `<div class="card"><div class="section-head"><div><h3 style="margin:0">${esc(x.name)}</h3><div class="small">${esc(x.platform||'')} ${x.expected_date?'· 預計 '+dateText(x.expected_date):''}</div></div><span class="pill ${x.status==='paid'?'ok':x.status==='unpaid'?'bad':'warn'}">${st}</span></div><div style="display:flex;justify-content:space-between"><span>總價 ${money(x.total_amount)}</span><span>待付 <b>${money(remain)}</b></span></div><div class="progress"><div style="width:${pct(x.paid_amount,x.total_amount)}%"></div></div><div class="actions" style="margin-top:12px"><button class="ghost" onclick="openPreorderModal('${x.id}')">編輯</button><button class="danger" onclick="deleteRecord('preorders','${x.id}')">刪除</button></div></div>`}).join('')||'<div class="card small">目前沒有預購資料。</div>'}</div>`}
+function renderInstallments(){m.innerHTML=`<div class="section-head"><div><div class="page-title">💳 分期管理</div><div class="page-sub">可補登已經繳過的期數，不會倒灌進本月支出</div></div><button class="primary" style="width:auto;margin:0" onclick="openInstallmentModal()">＋ 新增分期</button></div><div class="list">${installments.map(x=>`<div class="card"><div class="section-head"><div><h3 style="margin:0">${esc(x.name)}</h3><div class="small">${money(x.total_amount)} · ${x.total_periods} 期 · 每期 ${money(x.period_amount)}</div></div><span class="pill ${x.status==='active'?'warn':x.status==='completed'?'ok':'bad'}">${x.status==='active'?'進行中':x.status==='completed'?'已完成':'已取消'}</span></div><div style="display:flex;justify-content:space-between"><span>已繳 ${x.paid_periods}/${x.total_periods} 期</span><b>剩餘 ${money(x.remaining_amount)}</b></div><div class="progress"><div style="width:${pct(x.paid_periods,x.total_periods)}%"></div></div><div class="actions" style="margin-top:12px"><button class="ghost" onclick="openInstallmentDetail('${x.id}')">查看每一期</button><button class="ghost" onclick="openInstallmentModal('${x.id}')">編輯</button><button class="danger" onclick="deleteRecord('installments','${x.id}')">刪除</button></div></div>`).join('')||'<div class="card small">目前沒有分期資料。</div>'}</div>`}
+function renderBills(){m.innerHTML=`<div class="section-head"><div><div class="page-title">🧾 固定繳費</div><div class="page-sub">每月電話費、保險、訂閱等固定支出</div></div><button class="primary" style="width:auto;margin:0" onclick="openBillModal()">＋ 新增帳單</button></div><div class="list">${bills.map(x=>`<div class="row"><div class="row-left"><div class="row-title">${esc(x.name)}</div><div class="small">每月 ${x.due_day} 日 · ${money(x.amount)}</div></div><div class="actions"><span class="pill ${x.status==='paid'?'ok':'bad'}">${x.status==='paid'?'已繳':'待繳'}</span><button class="ghost" onclick="toggleBill('${x.id}')">${x.status==='paid'?'改為待繳':'標記已繳'}</button><button class="danger" onclick="deleteRecord('bills','${x.id}')">刪除</button></div></div>`).join('')||'<div class="card small">目前沒有固定帳單。</div>'}</div>`}
+function renderGoals(){m.innerHTML=`<div class="section-head"><div><div class="page-title">🎯 儲蓄目標</div><div class="page-sub">把想完成的事情變成看得到的進度</div></div><button class="primary" style="width:auto;margin:0" onclick="openGoalModal()">＋ 新增目標</button></div><div class="grid2">${goals.map(x=>`<div class="card"><div class="section-head"><h3>${esc(x.name)}</h3><button class="danger" onclick="deleteRecord('goals','${x.id}')">刪除</button></div><div style="display:flex;justify-content:space-between"><b>${money(x.current_amount)}</b><span class="small">目標 ${money(x.target_amount)}</span></div><div class="progress"><div style="width:${pct(x.current_amount,x.target_amount)}%"></div></div><div class="small" style="margin-top:8px">完成 ${pct(x.current_amount,x.target_amount).toFixed(0)}%${x.target_date?' · 目標 '+dateText(x.target_date):''}</div><button class="ghost" style="margin-top:12px" onclick="addGoalMoney('${x.id}')">＋ 增加存款</button></div>`).join('')||'<div class="card small">目前沒有儲蓄目標。</div>'}</div>`}
+
+function openModal(html){modalCard.innerHTML=html;modal.classList.remove('hidden')}function closeModal(){modal.classList.add('hidden')}
+function selectAccounts(){return accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}
+function openTransactionModal(){openModal(`<div class="modal-head"><h3>新增記帳</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveTransaction(event)"><div class="form-grid"><div><label>類型</label><select id="tType" class="select"><option value="expense">支出</option><option value="income">收入</option></select></div><div><label>金額</label><input id="tAmount" class="input" type="number" min="0" required></div><div><label>日期</label><input id="tDate" class="input" type="date" value="${today()}" required></div><div><label>帳戶</label><select id="tAccount" class="select" required>${selectAccounts()}</select></div><div><label>分類</label><input id="tCategory" class="input" placeholder="例如 飲食、薪資"></div><div><label>備註</label><input id="tNote" class="input" placeholder="可留空"></div></div><button class="primary">儲存</button></form>`)}
+async function saveTransaction(e){e.preventDefault();const {error}=await db.from('transactions').insert({user_id:currentUser.id,type:tType.value,amount:Number(tAmount.value),date:tDate.value,account_id:tAccount.value,category:tCategory.value.trim(),note:tNote.value.trim()});if(error)return alert(error.message);closeModal();await loadAll();render()}
+function openAccountModal(){openModal(`<div class="modal-head"><h3>新增帳戶</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveAccount(event)"><label>名稱</label><input id="aName" class="input" required placeholder="例如 現金、AII銀行"><label>類型</label><select id="aType" class="select"><option>現金</option><option>銀行</option><option>信用卡</option><option>其他</option></select><label>初始餘額</label><input id="aBalance" class="input" type="number" value="0"><button class="primary">儲存</button></form>`)}
+async function saveAccount(e){e.preventDefault();const {error}=await db.from('accounts').insert({user_id:currentUser.id,name:aName.value.trim(),type:aType.value,opening_balance:Number(aBalance.value)});if(error)return alert(error.message);closeModal();await loadAll();render()}
+function openPreorderModal(id){const x=preorders.find(a=>a.id===id)||{};openModal(`<div class="modal-head"><h3>${id?'編輯':'新增'}預購</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="savePreorder(event,'${id||''}')"><label>商品名稱</label><input id="pName" class="input" required value="${esc(x.name||'')}"><div class="form-grid"><div><label>總價</label><input id="pTotal" class="input" type="number" min="0" required value="${x.total_amount||''}"></div><div><label>已付款</label><input id="pPaid" class="input" type="number" min="0" value="${x.paid_amount||0}"></div><div><label>平台／賣家</label><input id="pPlatform" class="input" value="${esc(x.platform||'')}"></div><div><label>預計到貨</label><input id="pDate" class="input" type="date" value="${x.expected_date||''}"></div><div><label>狀態</label><select id="pStatus" class="select"><option value="waiting">等待到貨</option><option value="partial">部分付款</option><option value="unpaid">尚未付款</option><option value="paid">已付清</option><option value="cancelled">已取消</option></select></div></div><button class="primary">儲存</button></form>`);if(x.status)pStatus.value=x.status}
+async function savePreorder(e,id){e.preventDefault();const payload={user_id:currentUser.id,name:pName.value.trim(),total_amount:Number(pTotal.value),paid_amount:Number(pPaid.value||0),platform:pPlatform.value.trim(),expected_date:pDate.value||null,status:pStatus.value};let q=id?db.from('preorders').update(payload).eq('id',id):db.from('preorders').insert(payload);const {error}=await q;if(error)return alert(error.message);closeModal();await loadAll();render()}
+function openInstallmentModal(id){const x=installments.find(a=>a.id===id)||{};openModal(`<div class="modal-head"><h3>${id?'編輯':'新增'}分期</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveInstallment(event,'${id||''}')"><label>名稱</label><input id="iName" class="input" required value="${esc(x.name||'')}"><div class="form-grid"><div><label>總金額</label><input id="iTotal" class="input" type="number" min="0" required value="${x.total_amount||''}"></div><div><label>總期數</label><input id="iPeriods" class="input" type="number" min="1" required value="${x.total_periods||''}"></div><div><label>每期金額</label><input id="iPeriodAmount" class="input" type="number" min="0" required value="${x.period_amount||''}"></div><div><label>已繳期數（可補登）</label><input id="iPaidPeriods" class="input" type="number" min="0" required value="${x.paid_periods||0}"></div><div><label>第一期日期</label><input id="iStart" class="input" type="date" value="${x.start_date||today()}"></div><div><label>每月幾號扣款</label><input id="iDay" class="input" type="number" min="1" max="28" value="${x.due_day||5}"></div></div><p class="small">已繳期數只是歷史補登，不會自動算進今天／本月支出。</p><button class="primary">儲存</button></form>`)}
+async function saveInstallment(e,id){e.preventDefault();const total=Number(iTotal.value), periods=Number(iPeriods.value), paid=Math.min(periods,Number(iPaidPeriods.value));const payload={user_id:currentUser.id,name:iName.value.trim(),total_amount:total,total_periods:periods,period_amount:Number(iPeriodAmount.value),paid_periods:paid,remaining_amount:Math.max(0,total-paid*Number(iPeriodAmount.value)),start_date:iStart.value||null,due_day:Number(iDay.value),status:paid>=periods?'completed':'active'};let q=id?db.from('installments').update(payload).eq('id',id):db.from('installments').insert(payload);const {error}=await q;if(error)return alert(error.message);closeModal();await loadAll();render()}
+function openInstallmentDetail(id){const x=installments.find(a=>a.id===id);if(!x)return;let rows='';for(let n=1;n<=x.total_periods;n++){const paid=n<=x.paid_periods;rows+=`<tr><td>第 ${n} 期</td><td>${dateText(addMonths(x.start_date,n-1,x.due_day))}</td><td>${money(x.period_amount)}</td><td><span class="pill ${paid?'ok':'warn'}">${paid?'已繳':'待繳'}</span></td></tr>`}openModal(`<div class="modal-head"><h3>${esc(x.name)} · 每期紀錄</h3><button class="ghost" onclick="closeModal()">關閉</button></div><div class="table-wrap"><table class="table"><thead><tr><th>期數</th><th>日期</th><th>金額</th><th>狀態</th></tr></thead><tbody>${rows}</tbody></table></div><button class="primary" onclick="closeModal();openInstallmentModal('${id}')">修改已繳期數</button>`)}
+function addMonths(base,n,day){if(!base)return null;const d=new Date(base+'T00:00:00');d.setMonth(d.getMonth()+n);d.setDate(Math.min(day||d.getDate(),28));return d.toISOString().slice(0,10)}
+function openBillModal(){openModal(`<div class="modal-head"><h3>新增固定繳費</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveBill(event)"><label>名稱</label><input id="bName" class="input" required placeholder="例如 電話費"><div class="form-grid"><div><label>每月金額</label><input id="bAmount" class="input" type="number" min="0" required></div><div><label>繳費日</label><input id="bDay" class="input" type="number" min="1" max="31" value="5"></div></div><button class="primary">儲存</button></form>`)}
+async function saveBill(e){e.preventDefault();const {error}=await db.from('bills').insert({user_id:currentUser.id,name:bName.value.trim(),amount:Number(bAmount.value),due_day:Number(bDay.value),status:'unpaid'});if(error)return alert(error.message);closeModal();await loadAll();render()}
+async function toggleBill(id){const x=bills.find(a=>a.id===id);const next=x.status==='paid'?'unpaid':'paid';const {error}=await db.from('bills').update({status:next}).eq('id',id);if(error)return alert(error.message);await loadAll();render()}
+function openGoalModal(){openModal(`<div class="modal-head"><h3>新增儲蓄目標</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveGoal(event)"><label>目標名稱</label><input id="gName" class="input" required placeholder="例如 緊急預備金"><div class="form-grid"><div><label>目標金額</label><input id="gTarget" class="input" type="number" min="0" required></div><div><label>目前已存</label><input id="gCurrent" class="input" type="number" min="0" value="0"></div><div><label>目標日期</label><input id="gDate" class="input" type="date"></div></div><button class="primary">儲存</button></form>`)}
+async function saveGoal(e){e.preventDefault();const {error}=await db.from('goals').insert({user_id:currentUser.id,name:gName.value.trim(),target_amount:Number(gTarget.value),current_amount:Number(gCurrent.value||0),target_date:gDate.value||null});if(error)return alert(error.message);closeModal();await loadAll();render()}
+async function addGoalMoney(id){const x=goals.find(a=>a.id===id);const n=prompt(`目前 ${money(x.current_amount)}\n這次要增加多少？`);if(n===null)return;const v=Number(n);if(!Number.isFinite(v)||v<0)return alert('請輸入正確金額');const {error}=await db.from('goals').update({current_amount:Number(x.current_amount)+v}).eq('id',id);if(error)return alert(error.message);await loadAll();render()}
+async function deleteRecord(table,id){if(!confirm('確定要刪除嗎？'))return;const {error}=await db.from(table).delete().eq('id',id);if(error)return alert(error.message);await loadAll();render()}
+function quickAdd(){if(currentPage==='dashboard'||currentPage==='transactions')openTransactionModal();else if(currentPage==='preorders')openPreorderModal();else if(currentPage==='installments')openInstallmentModal();else if(currentPage==='bills')openBillModal();else if(currentPage==='goals')openGoalModal();else openTransactionModal()}
+init();
+</script>
+</body>
+</html>
