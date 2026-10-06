@@ -428,7 +428,7 @@ async function saveCommonPayment(e,memberId,paymentId){
   e.preventDefault();
   const m=commonExpenseMembers.find(x=>x.id===memberId);if(!m)return;
   const months=Number(document.getElementById('cpMonths').value),start=document.getElementById('cpStart').value,amount=Number(document.getElementById('cpAmount').value),end=coveredMonths(start,months);
-  const payload={user_id:currentUser.id,common_expense_member_id:memberId,amount,months_covered:months,coverage_start:start+'-01',coverage_end:end+'-01',payment_date:document.getElementById('cpDate').value,account_id:document.getElementById('cpAccount').value,note:document.getElementById('cpNote').value.trim()};
+  const payload={user_id:currentUser.id,common_expense_id:m.common_expense_id,common_expense_member_id:memberId,amount,months_covered:months,coverage_start:start+'-01',coverage_end:end+'-01',payment_date:document.getElementById('cpDate').value,account_id:document.getElementById('cpAccount').value,note:document.getElementById('cpNote').value.trim()};
   const q=paymentId?db.from('common_expense_payments').update(payload).eq('id',paymentId):db.from('common_expense_payments').insert(payload);
   const {error}=await q;
   if(error)return alert(error.message);
