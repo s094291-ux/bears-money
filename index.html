@@ -361,19 +361,146 @@ function commonExpenseMonthlyMembers(id){return commonExpenseMembers.filter(m=>m
 function commonExpenseChargeFor(id,month){return commonExpenseCharges.find(c=>c.common_expense_id===id&&c.charge_month.slice(0,7)===month);}
 
 function renderCommonExpenses(){
-  document.getElementById('main').innerHTML=`<div class="section-head"><div><div class="page-title">👥 共同費用</div><div class="page-sub">管理 Spotify、家庭會員等「我先付款、大家分攤」的費用</div></div><button class="primary" style="width:auto;margin:0" onclick="openCommonExpenseModal()">＋ 新增共同費用</button></div>${monthPicker()}<div class="list">${commonExpenses.map(x=>{const ms=commonExpenseMonthlyMembers(x.id),charge=commonExpenseChargeFor(x.id,currentMonth),others=ms.reduce((s,m)=>s+Number(m.monthly_share||0),0),self=Number(x.self_share||0);return `<div class="card"><div class="section-head"><div><h3>${esc(x.name)}</h3><div class="small">每月實際扣款 ${money(x.monthly_amount)} · ${monthLabel(currentMonth)}</div></div><span class="pill ${charge?'ok':'warn'}">${charge?'已記錄本月扣款':'尚未記錄本月扣款'}</span></div><div class="cards" style="margin:12px 0"><div class="card"><div class="metric-label">自己分攤</div><div class="metric">${money(self)}</div></div><div class="card"><div class="metric-label">其他人本月應分攤</div><div class="metric">${money(others)}</div></div><div class="card"><div class="metric-label">本月自己實際負擔</div><div class="metric">${money(Number(x.monthly_amount)-others)}</div></div></div><div class="actions"><button class="primary" style="width:auto;margin:0" onclick="openCommonChargeModal('${x.id}')">${charge?'查看本月扣款':'💳 記錄本月扣款'}</button><button class="ghost" onclick="openCommonExpenseDetail('${x.id}')">👥 成員／預付款</button></div></div>`}).join('')||'<div class="card small">還沒有共同費用，例如可以先建立 Spotify。</div>'}</div>`;
+  document.getElementById('main').innerHTML=`<div class="section-head"><div><div class="page-title">👥 共同費用</div><div class="page-sub">管理 Spotify、家庭會員等「我先付款、大家分攤」的費用</div></div><button class="primary" style="width:auto;margin:0" onclick="openCommonExpenseModal()">＋ 新增共同費用</button></div>${monthPicker()}<div class="list">${commonExpenses.map(x=>{const ms=commonExpenseMonthlyMembers(x.id),charge=commonExpenseChargeFor(x.id,currentMonth),others=ms.reduce((s,m)=>s+Number(m.monthly_share||0),0),self=Number(x.self_share||0);return `<div class="card"><div class="section-head"><div><h3>${esc(x.name)}</h3><div class="small">每月實際扣款 ${money(x.monthly_amount)} · ${monthLabel(currentMonth)}</div></div><span class="pill ${charge?'ok':'warn'}">${charge?'已記錄本月扣款':'尚未記錄本月扣款'}</span></div><div class="cards" style="margin:12px 0"><div class="card"><div class="metric-label">自己分攤</div><div class="metric">${money(self)}</div></div><div class="card"><div class="metric-label">其他人本月應分攤</div><div class="metric">${money(others)}</div></div><div class="card"><div class="metric-label">本月自己實際負擔</div><div class="metric">${money(Number(x.monthly_amount)-others)}</div></div></div><div class="actions"><button class="primary" style="width:auto;margin:0" onclick="openCommonChargeModal('${x.id}')">${charge?'查看本月扣款':'💳 記錄本月扣款'}</button><button class="ghost" onclick="openCommonExpenseDetail('${x.id}')">👥 成員／預付款</button><button class="ghost" onclick="openCommonExpenseModal('${x.id}')">✏️ 編輯</button><button class="danger" onclick="deleteCommonExpense('${x.id}')">🗑️ 刪除</button></div></div>`}).join('')||'<div class="card small">還沒有共同費用，例如可以先建立 Spotify。</div>'}</div>`;
 }
-function openCommonExpenseModal(){openModal(`<div class="modal-head"><h3>👥 新增共同費用</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonExpense(event)"><label>名稱</label><input id="ceName" class="input" required placeholder="例如 Spotify"><div class="form-grid"><div><label>每月實際扣款</label><input id="ceAmount" class="input" type="number" min="0" step="0.01" required placeholder="例如 298"></div><div><label>自己每月分攤</label><input id="ceSelf" class="input" type="number" min="0" step="0.01" value="50" required></div><div><label>開始月份</label><input id="ceStart" class="input" type="month" value="${currentMonth}" required></div></div><div class="small" style="margin-top:10px">例如 Spotify：實際每月 $298、6 人、你自己 $50；其他成員各自設定每月 $50。有人一次付半年／一年時，付款會標記覆蓋月份，不會被算成一般收入。</div><button class="primary">建立</button></form>`);}
-async function saveCommonExpense(e){e.preventDefault();const payload={user_id:currentUser.id,name:document.getElementById('ceName').value.trim(),monthly_amount:Number(document.getElementById('ceAmount').value),self_share:Number(document.getElementById('ceSelf').value),start_month:document.getElementById('ceStart').value+'-01'};const {error}=await db.from('common_expenses').insert(payload);if(error)return alert(error.message);closeModal();await loadAll();render();}
-function openCommonExpenseDetail(id){const x=commonExpenses.find(a=>a.id===id);if(!x)return;const ms=commonExpenseMonthlyMembers(id);openModal(`<div class="modal-head"><div><h3>👥 ${esc(x.name)}</h3><div class="small">每月實際 ${money(x.monthly_amount)} · 目前查看 ${monthLabel(currentMonth)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div><div class="actions" style="margin-top:14px"><button class="primary" style="width:auto;margin:0" onclick="openCommonMemberModal('${id}')">＋ 新增成員</button></div><div class="list" style="margin-top:14px">${ms.map(m=>{const covered=memberCovered(m.id,currentMonth);return `<div class="row"><div><b>${esc(m.name)}</b><div class="small">每月 ${money(m.monthly_share)} · ${covered?'🟢 已付到本月':'🔴 本月未收'}${memberPaidThrough(m.id)?' · 最近預付到 '+monthLabel(memberPaidThrough(m.id)):''}</div></div><div class="actions"><button class="ghost" onclick="openCommonPaymentModal('${m.id}')">💰 收款／預付</button><button class="danger" onclick="deleteCommonMember('${m.id}')">刪除</button></div></div>`}).join('')||'<div class="card small">還沒有成員，先新增其他 5 位分攤者。</div>'}</div>`);}
-function openCommonMemberModal(expenseId){openModal(`<div class="modal-head"><h3>＋ 新增分攤成員</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonMember(event,'${expenseId}')"><label>成員名稱</label><input id="cmName" class="input" required placeholder="例如 小明"><label>每月分攤</label><input id="cmShare" class="input" type="number" min="0" step="0.01" value="50" required><button class="primary">新增</button></form>`);}
-async function saveCommonMember(e,expenseId){e.preventDefault();const {error}=await db.from('common_expense_members').insert({user_id:currentUser.id,common_expense_id:expenseId,name:document.getElementById('cmName').value.trim(),monthly_share:Number(document.getElementById('cmShare').value)});if(error)return alert(error.message);closeModal();await loadAll();openCommonExpenseDetail(expenseId);}
-function openCommonPaymentModal(memberId){const m=commonExpenseMembers.find(x=>x.id===memberId);if(!m)return;openModal(`<div class="modal-head"><h3>💰 收到 ${esc(m.name)} 的分攤款</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonPayment(event,'${memberId}')"><div class="form-grid"><div><label>付款金額</label><input id="cpAmount" class="input" type="number" min="0.01" step="0.01" value="${Number(m.monthly_share)||0}" required></div><div><label>預付幾個月</label><select id="cpMonths" class="select"><option value="1">1 個月</option><option value="3">3 個月</option><option value="6">半年（6 個月）</option><option value="12">一年（12 個月）</option></select></div><div><label>覆蓋開始月份</label><input id="cpStart" class="input" type="month" value="${currentMonth}" required></div><div><label>收到日期</label><input id="cpDate" class="input" type="date" value="${today()}" required></div><div><label>收到哪個帳戶</label><select id="cpAccount" class="select" required>${selectAccounts()}</select></div></div><div class="small" style="margin-top:10px">這筆錢會增加指定帳戶餘額，但不會算進收入統計；例如 $300 預付半年，就是覆蓋 6 個月份。</div><label>備註</label><input id="cpNote" class="input" placeholder="例如 Spotify 半年費"><button class="primary">儲存分攤款</button></form>`);}
-async function saveCommonPayment(e,memberId){e.preventDefault();const m=commonExpenseMembers.find(x=>x.id===memberId),months=Number(document.getElementById('cpMonths').value),start=document.getElementById('cpStart').value,amount=Number(document.getElementById('cpAmount').value),end=coveredMonths(start,months);const {error}=await db.from('common_expense_payments').insert({user_id:currentUser.id,common_expense_member_id:memberId,amount,months_covered:months,coverage_start:start+'-01',coverage_end:end+'-01',payment_date:document.getElementById('cpDate').value,account_id:document.getElementById('cpAccount').value,note:document.getElementById('cpNote').value.trim()});if(error)return alert(error.message);closeModal();await loadAll();openCommonExpenseDetail(m.common_expense_id);}
-function openCommonChargeModal(id){const x=commonExpenses.find(a=>a.id===id),existing=commonExpenseChargeFor(id,currentMonth);if(existing){openModal(`<div class="modal-head"><h3>💳 ${esc(x.name)}｜${monthLabel(currentMonth)}</h3><button class="ghost" onclick="closeModal()">關閉</button></div><div class="card"><div class="small">實際扣款</div><div class="metric">${money(existing.amount)}</div><div class="small">付款日期 ${dateText(existing.payment_date)} · 帳戶 ${esc(accounts.find(a=>a.id===existing.account_id)?.name||'-')}</div></div><div class="actions" style="margin-top:14px"><button class="danger" onclick="deleteCommonCharge('${existing.id}')">刪除本月扣款紀錄</button></div>`);return;}if(!accounts.length){alert('請先建立付款帳戶。');setPage('accounts');return;}openModal(`<div class="modal-head"><h3>💳 ${esc(x.name)}｜記錄 ${monthLabel(currentMonth)}扣款</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonCharge(event,'${id}')"><div class="form-grid"><div><label>實際扣款金額</label><input id="ccAmount" class="input" type="number" min="0" step="0.01" value="${x.monthly_amount}" required></div><div><label>付款日期</label><input id="ccDate" class="input" type="date" value="${today()}" required></div><div><label>扣款帳戶</label><select id="ccAccount" class="select" required>${selectAccounts()}</select></div></div><div class="small">儲存後會建立一筆真正的支出交易；其他人的分攤款不會變成收入，而是直接反映在帳戶餘額。</div><button class="primary">✓ 記錄扣款</button></form>`);}
-async function saveCommonCharge(e,id){e.preventDefault();const x=commonExpenses.find(a=>a.id===id),amount=Number(document.getElementById('ccAmount').value),date=document.getElementById('ccDate').value,accountId=document.getElementById('ccAccount').value;const tx=await db.from('transactions').insert({user_id:currentUser.id,type:'expense',amount,date,account_id:accountId,category:'共同費用',note:`${x.name}｜${monthLabel(currentMonth)}`}).select('id').single();if(tx.error)return alert(tx.error.message);const {error}=await db.from('common_expense_charges').insert({user_id:currentUser.id,common_expense_id:id,charge_month:currentMonth+'-01',amount,payment_date:date,account_id:accountId,transaction_id:tx.data.id,note:`${x.name}｜${monthLabel(currentMonth)}`});if(error){await db.from('transactions').delete().eq('id',tx.data.id);return alert(error.message);}closeModal();await loadAll();render();}
-async function deleteCommonCharge(id){if(!confirm('刪除本月扣款紀錄？這也會刪除對應的共同費用支出。'))return;const c=commonExpenseCharges.find(x=>x.id===id);if(c?.transaction_id)await db.from('transactions').delete().eq('id',c.transaction_id);const {error}=await db.from('common_expense_charges').delete().eq('id',id);if(error)return alert(error.message);closeModal();await loadAll();render();}
-async function deleteCommonMember(id){if(!confirm('刪除這位成員及其預付款紀錄？'))return;const m=commonExpenseMembers.find(x=>x.id===id);const {error}=await db.from('common_expense_members').delete().eq('id',id);if(error)return alert(error.message);await loadAll();openCommonExpenseDetail(m.common_expense_id);}
+
+function openCommonExpenseModal(id){
+  const x=commonExpenses.find(a=>a.id===id)||{};
+  const editing=!!id;
+  const start=(x.start_month||currentMonth+'-01').slice(0,7);
+  openModal(`<div class="modal-head"><h3>👥 ${editing?'編輯':'新增'}共同費用</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonExpense(event,'${id||''}')"><label>名稱</label><input id="ceName" class="input" required placeholder="例如 Spotify" value="${esc(x.name||'')}"><div class="form-grid"><div><label>每月實際扣款</label><input id="ceAmount" class="input" type="number" min="0" step="0.01" required placeholder="例如 298" value="${x.monthly_amount??''}"></div><div><label>自己每月分攤</label><input id="ceSelf" class="input" type="number" min="0" step="0.01" value="${x.self_share??50}" required></div><div><label>開始月份</label><input id="ceStart" class="input" type="month" value="${start}" required></div></div><div class="small" style="margin-top:10px">例如 Spotify：實際每月 $298、你自己 $50；其他成員各自設定每月分攤。有人一次付半年／一年時，付款會標記覆蓋月份，不會被算成一般收入。</div><button class="primary">${editing?'儲存修改':'建立'}</button></form>`);
+}
+
+async function saveCommonExpense(e,id){
+  e.preventDefault();
+  const payload={user_id:currentUser.id,name:document.getElementById('ceName').value.trim(),monthly_amount:Number(document.getElementById('ceAmount').value),self_share:Number(document.getElementById('ceSelf').value),start_month:document.getElementById('ceStart').value+'-01'};
+  const q=id?db.from('common_expenses').update(payload).eq('id',id):db.from('common_expenses').insert(payload);
+  const {error}=await q;
+  if(error)return alert(error.message);
+  closeModal();await loadAll();render();
+}
+
+async function deleteCommonExpense(id){
+  const x=commonExpenses.find(a=>a.id===id);if(!x)return;
+  if(!confirm(`確定刪除「${x.name}」？\n這會一併刪除成員、預付款與每月扣款紀錄。`))return;
+  const charges=commonExpenseCharges.filter(c=>c.common_expense_id===id);
+  for(const c of charges){
+    if(c.transaction_id)await db.from('transactions').delete().eq('id',c.transaction_id);
+  }
+  const {error}=await db.from('common_expenses').delete().eq('id',id);
+  if(error)return alert(error.message);
+  closeModal();await loadAll();render();
+}
+
+function openCommonExpenseDetail(id){
+  const x=commonExpenses.find(a=>a.id===id);if(!x)return;
+  const ms=commonExpenseMonthlyMembers(id);
+  openModal(`<div class="modal-head"><div><h3>👥 ${esc(x.name)}</h3><div class="small">每月實際 ${money(x.monthly_amount)} · 目前查看 ${monthLabel(currentMonth)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div><div class="actions" style="margin-top:14px"><button class="primary" style="width:auto;margin:0" onclick="openCommonMemberModal('${id}')">＋ 新增成員</button><button class="ghost" onclick="closeModal();openCommonExpenseModal('${id}')">✏️ 編輯共同費用</button></div><div class="list" style="margin-top:14px">${ms.map(m=>{const covered=memberCovered(m.id,currentMonth);return `<div class="row"><div><b>${esc(m.name)}</b><div class="small">每月 ${money(m.monthly_share)} · ${covered?'🟢 已付到本月':'🔴 本月未收'}${memberPaidThrough(m.id)?' · 最近預付到 '+monthLabel(memberPaidThrough(m.id)):''}</div></div><div class="actions"><button class="ghost" onclick="openCommonPaymentModal('${m.id}')">💰 收款／預付</button><button class="ghost" onclick="openCommonMemberModal('${id}','${m.id}')">✏️ 編輯</button><button class="danger" onclick="deleteCommonMember('${m.id}')">🗑️ 刪除</button></div></div>`}).join('')||'<div class="card small">還沒有成員，先新增其他 5 位分攤者。</div>'}</div>`);
+}
+
+function openCommonMemberModal(expenseId,memberId){
+  const m=commonExpenseMembers.find(x=>x.id===memberId)||{};
+  const editing=!!memberId;
+  openModal(`<div class="modal-head"><h3>👤 ${editing?'編輯':'新增'}分攤成員</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonMember(event,'${expenseId}','${memberId||''}')"><label>成員名稱</label><input id="cmName" class="input" required placeholder="例如 小明" value="${esc(m.name||'')}"><label>每月分攤</label><input id="cmShare" class="input" type="number" min="0" step="0.01" value="${m.monthly_share??50}" required><button class="primary">${editing?'儲存修改':'新增'}</button></form>`);
+}
+
+async function saveCommonMember(e,expenseId,memberId){
+  e.preventDefault();
+  const payload={user_id:currentUser.id,common_expense_id:expenseId,name:document.getElementById('cmName').value.trim(),monthly_share:Number(document.getElementById('cmShare').value)};
+  const q=memberId?db.from('common_expense_members').update(payload).eq('id',memberId):db.from('common_expense_members').insert(payload);
+  const {error}=await q;
+  if(error)return alert(error.message);
+  closeModal();await loadAll();openCommonExpenseDetail(expenseId);
+}
+
+function openCommonPaymentModal(memberId,paymentId){
+  const m=commonExpenseMembers.find(x=>x.id===memberId);if(!m)return;
+  const p=commonExpensePayments.find(x=>x.id===paymentId)||{};
+  const editing=!!paymentId;
+  const start=(p.coverage_start||currentMonth+'-01').slice(0,7);
+  const months=Number(p.months_covered||1);
+  openModal(`<div class="modal-head"><h3>💰 ${editing?'編輯':'收到'} ${esc(m.name)} 的分攤款</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonPayment(event,'${memberId}','${paymentId||''}')"><div class="form-grid"><div><label>付款金額</label><input id="cpAmount" class="input" type="number" min="0.01" step="0.01" value="${Number(p.amount??m.monthly_share)||0}" required></div><div><label>預付幾個月</label><select id="cpMonths" class="select"><option value="1">1 個月</option><option value="3">3 個月</option><option value="6">半年（6 個月）</option><option value="12">一年（12 個月）</option></select></div><div><label>覆蓋開始月份</label><input id="cpStart" class="input" type="month" value="${start}" required></div><div><label>收到日期</label><input id="cpDate" class="input" type="date" value="${p.payment_date||today()}" required></div><div><label>收到哪個帳戶</label><select id="cpAccount" class="select" required>${selectAccounts()}</select></div></div><div class="small" style="margin-top:10px">這筆錢會增加指定帳戶餘額，但不會算進收入統計。付款涵蓋月份會從開始月份往後計算。</div><label>備註</label><input id="cpNote" class="input" placeholder="例如 Spotify 半年費" value="${esc(p.note||'')}"><div class="actions" style="margin-top:14px">${editing?`<button type="button" class="danger" onclick="deleteCommonPayment('${paymentId}')">🗑️ 刪除這筆付款</button>`:''}<button class="primary">${editing?'儲存修改':'儲存分攤款'}</button></div></form>`);
+  if(document.getElementById('cpMonths'))document.getElementById('cpMonths').value=String(months);
+  if(p.account_id&&document.getElementById('cpAccount'))document.getElementById('cpAccount').value=p.account_id;
+}
+
+async function saveCommonPayment(e,memberId,paymentId){
+  e.preventDefault();
+  const m=commonExpenseMembers.find(x=>x.id===memberId);if(!m)return;
+  const months=Number(document.getElementById('cpMonths').value),start=document.getElementById('cpStart').value,amount=Number(document.getElementById('cpAmount').value),end=coveredMonths(start,months);
+  const payload={user_id:currentUser.id,common_expense_member_id:memberId,amount,months_covered:months,coverage_start:start+'-01',coverage_end:end+'-01',payment_date:document.getElementById('cpDate').value,account_id:document.getElementById('cpAccount').value,note:document.getElementById('cpNote').value.trim()};
+  const q=paymentId?db.from('common_expense_payments').update(payload).eq('id',paymentId):db.from('common_expense_payments').insert(payload);
+  const {error}=await q;
+  if(error)return alert(error.message);
+  closeModal();await loadAll();openCommonExpenseDetail(m.common_expense_id);
+}
+
+async function deleteCommonPayment(id){
+  if(!confirm('確定刪除這筆分攤／預付款？\n刪除後這筆收到的金額也會從帳戶餘額中扣回。'))return;
+  const p=commonExpensePayments.find(x=>x.id===id);if(!p)return;
+  const {error}=await db.from('common_expense_payments').delete().eq('id',id);
+  if(error)return alert(error.message);
+  closeModal();await loadAll();openCommonExpenseDetail(commonExpenseMembers.find(m=>m.id===p.common_expense_member_id)?.common_expense_id);
+}
+
+function openCommonChargeModal(id){
+  const x=commonExpenses.find(a=>a.id===id),existing=commonExpenseChargeFor(id,currentMonth);
+  if(existing){
+    openModal(`<div class="modal-head"><h3>💳 ${esc(x.name)}｜${monthLabel(currentMonth)}</h3><button class="ghost" onclick="closeModal()">關閉</button></div><div class="card"><div class="small">實際扣款</div><div class="metric">${money(existing.amount)}</div><div class="small">付款日期 ${dateText(existing.payment_date)} · 帳戶 ${esc(accounts.find(a=>a.id===existing.account_id)?.name||'-')}</div></div><div class="actions" style="margin-top:14px"><button class="primary" style="width:auto;margin:0" onclick="openCommonChargeModalEdit('${id}','${existing.id}')">✏️ 編輯扣款</button><button class="danger" onclick="deleteCommonCharge('${existing.id}')">🗑️ 刪除本月扣款</button></div>`);
+    return;
+  }
+  if(!accounts.length){alert('請先建立付款帳戶。');setPage('accounts');return;}
+  openCommonChargeModalEdit(id,'');
+}
+
+function openCommonChargeModalEdit(id,chargeId){
+  const x=commonExpenses.find(a=>a.id===id),existing=commonExpenseCharges.find(c=>c.id===chargeId)||{};
+  if(!accounts.length){alert('請先建立付款帳戶。');setPage('accounts');return;}
+  openModal(`<div class="modal-head"><h3>💳 ${esc(x.name)}｜${existing.id?'編輯':'記錄'} ${monthLabel(currentMonth)}扣款</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonCharge(event,'${id}','${chargeId||''}')"><div class="form-grid"><div><label>實際扣款金額</label><input id="ccAmount" class="input" type="number" min="0" step="0.01" value="${existing.amount??x.monthly_amount}" required></div><div><label>付款日期</label><input id="ccDate" class="input" type="date" value="${existing.payment_date||today()}" required></div><div><label>扣款帳戶</label><select id="ccAccount" class="select" required>${selectAccounts()}</select></div></div><div class="small">儲存後會建立／更新一筆真正的支出交易；其他人的分攤款不會變成收入，而是直接反映在帳戶餘額。</div><button class="primary">${existing.id?'儲存扣款修改':'✓ 記錄扣款'}</button></form>`);
+  if(existing.account_id&&document.getElementById('ccAccount'))document.getElementById('ccAccount').value=existing.account_id;
+}
+
+async function saveCommonCharge(e,id,chargeId){
+  e.preventDefault();
+  const x=commonExpenses.find(a=>a.id===id),amount=Number(document.getElementById('ccAmount').value),date=document.getElementById('ccDate').value,accountId=document.getElementById('ccAccount').value;
+  const note=`${x.name}｜${monthLabel(currentMonth)}`;
+  if(chargeId){
+    const c=commonExpenseCharges.find(v=>v.id===chargeId);if(!c)return;
+    if(c.transaction_id){
+      const {error:txError}=await db.from('transactions').update({amount,date,account_id:accountId,category:'共同費用',note}).eq('id',c.transaction_id);
+      if(txError)return alert(txError.message);
+    }else{
+      const tx=await db.from('transactions').insert({user_id:currentUser.id,type:'expense',amount,date,account_id:accountId,category:'共同費用',note}).select('id').single();
+      if(tx.error)return alert(tx.error.message);
+      c.transaction_id=tx.data.id;
+    }
+    const {error}=await db.from('common_expense_charges').update({amount,payment_date:date,account_id:accountId,transaction_id:c.transaction_id,note}).eq('id',chargeId);
+    if(error)return alert(error.message);
+    closeModal();await loadAll();render();return;
+  }
+  const tx=await db.from('transactions').insert({user_id:currentUser.id,type:'expense',amount,date,account_id:accountId,category:'共同費用',note}).select('id').single();
+  if(tx.error)return alert(tx.error.message);
+  const {error}=await db.from('common_expense_charges').insert({user_id:currentUser.id,common_expense_id:id,charge_month:currentMonth+'-01',amount,payment_date:date,account_id:accountId,transaction_id:tx.data.id,note});
+  if(error){await db.from('transactions').delete().eq('id',tx.data.id);return alert(error.message);}
+  closeModal();await loadAll();render();
+}
+
+async function deleteCommonCharge(id){
+  if(!confirm('刪除本月扣款紀錄？這也會刪除對應的共同費用支出。'))return;
+  const c=commonExpenseCharges.find(x=>x.id===id);
+  if(c?.transaction_id){const {error:txError}=await db.from('transactions').delete().eq('id',c.transaction_id);if(txError)return alert(txError.message);}
+  const {error}=await db.from('common_expense_charges').delete().eq('id',id);
+  if(error)return alert(error.message);
+  closeModal();await loadAll();render();
+}
+
+async function deleteCommonMember(id){
+  if(!confirm('刪除這位成員及其預付款紀錄？'))return;
+  const m=commonExpenseMembers.find(a=>a.id===id);if(!m)return;
+  const {error}=await db.from('common_expense_members').delete().eq('id',id);
+  if(error)return alert(error.message);
+  await loadAll();openCommonExpenseDetail(m.common_expense_id);
+}
 
 function renderTransactions(){
   const {start,end}=monthRange();
