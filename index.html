@@ -364,7 +364,7 @@ function renderInstallments(){
       ${paid<total?`<div class="small" style="margin-top:9px">下一期：第 ${paid+1} 期 · ${dateText(nextDate)} · ${money(x.period_amount)}</div>`:'<div class="small" style="margin-top:9px">🎉 這筆分期已全部繳清</div>'}
       <div class="actions" style="margin-top:12px">
         <button class="ghost" onclick="openInstallmentDetail('${x.id}')">查看每一期</button>
-        ${paid<total?`<button class="ghost" onclick="markInstallmentPaid('${x.id}')">✓ 繳下一期</button>`:''}
+        ${paid<total?`<button class="ghost" onclick="openPaymentModal('${x.id}')">💰 繳下一期</button>`:''}
         ${paid>0?`<button class="ghost" onclick="undoInstallmentPaid('${x.id}')">↩ 撤銷最後一期</button>`:''}
         <button class="ghost" onclick="openInstallmentModal('${x.id}')">編輯</button>
         <button class="danger" onclick="deleteRecord('installments','${x.id}')">刪除</button>
@@ -509,11 +509,21 @@ async function saveInstallmentPayment(e,id,periodNumber){
     }).select('id').single();
     if(tx.error)throw tx.error;
 
-    const pay=await db.from('installment_payments').insert({
+    let pay=await db.from('installment_payments').insert({
       user_id:currentUser.id,installment_id:id,period_number:periodNumber,
       payment_date:date,amount,account_id:accountId,note,receipt_path:receiptPath,
       transaction_id:tx.data.id
     });
+
+    // 如果你目前尚未加入 transaction_id 欄位，先用不含該欄位的版本寫入，
+    // 這樣付款功能仍可正常使用。之後再補欄位即可。
+    if(pay.error && /transaction_id|column.*does not exist/i.test(pay.error.message||'')){
+      pay=await db.from('installment_payments').insert({
+        user_id:currentUser.id,installment_id:id,period_number:periodNumber,
+        payment_date:date,amount,account_id:accountId,note,receipt_path:receiptPath
+      });
+    }
+
     if(pay.error){
       await db.from('transactions').delete().eq('id',tx.data.id);
       if(receiptPath)await db.storage.from('payment-receipts').remove([receiptPath]);
@@ -546,6 +556,14 @@ async function undoInstallmentPaid(id){
   if(payment.transaction_id){
     const {error:delTx}=await db.from('transactions').delete().eq('id',payment.transaction_id);
     if(delTx)return alert(delTx.message);
+  }else{
+    // 尚未建立 transaction_id 欄位時，依付款紀錄找對應的分期支出。
+    const txNote=payment.note||`${x.name}｜第${paid}期`;
+    const {data:txRows}=await db.from('transactions').select('id,created_at').eq('user_id',currentUser.id).eq('type','expense').eq('amount',payment.amount).eq('date',payment.payment_date).eq('account_id',payment.account_id).eq('category','分期付款').eq('note',txNote).order('created_at',{ascending:false}).limit(1);
+    if(txRows?.[0]){
+      const {error:delTx}=await db.from('transactions').delete().eq('id',txRows[0].id);
+      if(delTx)return alert(delTx.message);
+    }
   }
   if(payment.receipt_path)await db.storage.from('payment-receipts').remove([payment.receipt_path]);
   const nextPaid=paid-1;
@@ -571,9 +589,13 @@ function openInstallmentDetail(id){
   let rows='';
   for(let n=1;n<=x.total_periods;n++){
     const p=payments.find(v=>Number(v.period_number)===n);
-    const isPaid=!!p;
+    // 舊版分期只有 paid_periods，沒有逐期 payment record。
+    // 因此 n <= paid 時仍要視為已繳，並標示為歷史補登。
+    const isPaid=!!p || n<=paid;
     const dueDate=addMonths(x.start_date,n-1,x.due_day);
-    rows+=`<tr><td>第 ${n} 期</td><td>${dateText(dueDate)}</td><td>${money(p?.amount??x.period_amount)}</td><td>${isPaid?`<span class="pill ok">✓ 已繳</span><div class="small">${dateText(p.payment_date)}</div>`:'<span class="pill warn">待繳</span>'}</td><td>${p?.receipt_path?`<button class="ghost" onclick="viewReceipt('${p.receipt_path}')">📸 查看</button>`:'-'}</td></tr>`;
+    const statusHtml=p?`<span class="pill ok">✓ 已繳</span><div class="small">實際 ${dateText(p.payment_date)}</div>`:isPaid?`<span class="pill ok">✓ 已繳</span><div class="small">歷史補登</div>`:'<span class="pill warn">待繳</span>';
+    const receiptHtml=p?.receipt_path?`<button class="ghost" onclick="viewReceipt('${p.receipt_path}')">📸 查看</button>`:'-';
+    rows+=`<tr><td>第 ${n} 期</td><td>${dateText(dueDate)}</td><td>${money(p?.amount??x.period_amount)}</td><td>${statusHtml}</td><td>${receiptHtml}</td></tr>`;
   }
   openModal(`<div class="modal-head"><div><h3 style="margin:0">${esc(x.name)}</h3><div class="small">${paid}/${x.total_periods} 期 · 剩餘 ${money(x.remaining_amount)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div><div class="table-wrap" style="margin-top:14px"><table class="table"><thead><tr><th>期數</th><th>預定日</th><th>金額</th><th>狀態</th><th>明細</th></tr></thead><tbody>${rows}</tbody></table></div><div class="actions" style="margin-top:14px">${paid<x.total_periods?`<button class="primary" style="width:auto;margin:0" onclick="closeModal();openPaymentModal('${id}')">💰 紀錄下一期付款</button>`:''}${paid>0?`<button class="ghost" onclick="closeModal();undoInstallmentPaid('${id}')">↩ 撤銷最後一期</button>`:''}<button class="ghost" onclick="closeModal();openInstallmentModal('${id}')">修改分期</button></div>`);
 }
