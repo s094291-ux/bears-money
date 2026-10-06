@@ -70,6 +70,7 @@ main{padding:24px;min-width:0}.page-title{font-size:25px;font-weight:800;margin:
 <button class="navbtn" data-page="accounts">🏦 帳戶</button>
 <button class="navbtn" data-page="search">🔎 查詢</button>
 <button class="navbtn" data-page="common">👥 共同費用</button>
+<button class="navbtn" data-page="store">🛍️ 賣場／預收款</button>
 <button class="navbtn" data-page="preorders">🛍️ 預購／待付款</button>
 <button class="navbtn" data-page="installments">💳 分期管理</button>
 <button class="navbtn" data-page="bills">🧾 固定繳費</button>
@@ -85,6 +86,7 @@ main{padding:24px;min-width:0}.page-title{font-size:25px;font-weight:800;margin:
 <button data-page="accounts">🏦<br>帳戶</button>
 <button data-page="search">🔎<br>查詢</button>
 <button data-page="common">👥<br>共同</button>
+<button data-page="store">🛍️<br>賣場</button>
 </div>
 <button class="fab" onclick="quickAdd()">＋</button>
 </div>
@@ -106,6 +108,7 @@ let currentUser=null,currentPage='dashboard';
 let currentMonth=new Date().toISOString().slice(0,7);
 let accounts=[],transactions=[],preorders=[],installments=[],installmentPayments=[],bills=[],goals=[],transfers=[],receivables=[],receivablePayments=[];
 let commonExpenses=[],commonExpenseMembers=[],commonExpensePayments=[],commonExpenseCharges=[];
+let storePrepayments=[],storePrepaymentUsages=[],storePrepaymentRefunds=[];
 
 const money=n=>new Intl.NumberFormat('zh-TW',{style:'currency',currency:'TWD',maximumFractionDigits:0}).format(Number(n)||0);
 const dateText=d=>d?new Date(d+'T00:00:00').toLocaleDateString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
@@ -221,7 +224,7 @@ async function logout(){
    DATA
    ========================= */
 async function loadAll(){
-  const tables=[['accounts','accounts'],['transactions','transactions'],['preorders','preorders'],['installments','installments'],['installment_payments','installmentPayments'],['transfers','transfers'],['receivables','receivables'],['receivable_payments','receivablePayments'],['bills','bills'],['goals','goals'],['common_expenses','commonExpenses'],['common_expense_members','commonExpenseMembers'],['common_expense_payments','commonExpensePayments'],['common_expense_charges','commonExpenseCharges']];
+  const tables=[['accounts','accounts'],['transactions','transactions'],['preorders','preorders'],['installments','installments'],['installment_payments','installmentPayments'],['transfers','transfers'],['receivables','receivables'],['receivable_payments','receivablePayments'],['bills','bills'],['goals','goals'],['common_expenses','commonExpenses'],['common_expense_members','commonExpenseMembers'],['common_expense_payments','commonExpensePayments'],['common_expense_charges','commonExpenseCharges'],['store_prepayments','storePrepayments'],['store_prepayment_usages','storePrepaymentUsages'],['store_prepayment_refunds','storePrepaymentRefunds']];
   for(const [table,key] of tables){
     const {data,error}=await db.from(table).select('*').order('created_at',{ascending:false});
     if(error){
@@ -245,6 +248,9 @@ async function loadAll(){
   commonExpenseMembers=window.commonExpenseMembers||[];
   commonExpensePayments=window.commonExpensePayments||[];
   commonExpenseCharges=window.commonExpenseCharges||[];
+  storePrepayments=window.storePrepayments||[];
+  storePrepaymentUsages=window.storePrepaymentUsages||[];
+  storePrepaymentRefunds=window.storePrepaymentRefunds||[];
 }
 
 /* =========================
@@ -262,7 +268,7 @@ document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',(
    ========================= */
 function render(){
   const m=document.getElementById('main');
-  ({dashboard:renderDashboard,transactions:renderTransactions,accounts:renderAccounts,search:renderSearch,common:renderCommonExpenses,preorders:renderPreorders,installments:renderInstallments,bills:renderBills,goals:renderGoals}[currentPage]||renderDashboard)();
+  ({dashboard:renderDashboard,transactions:renderTransactions,accounts:renderAccounts,search:renderSearch,common:renderCommonExpenses,store:renderStore,preorders:renderPreorders,installments:renderInstallments,bills:renderBills,goals:renderGoals}[currentPage]||renderDashboard)();
 }
 
 function monthLabel(key){
@@ -300,7 +306,9 @@ function accountBalance(a){
   const recOut=receivables.filter(r=>r.account_id===a.id).reduce((s,r)=>s-Number(r.amount||0),0);
   const recIn=receivablePayments.filter(p=>p.account_id===a.id).reduce((s,p)=>s+Number(p.amount||0),0);
   const commonIn=commonExpensePayments.filter(p=>p.account_id===a.id).reduce((s,p)=>s+Number(p.amount||0),0);
-  return Number(a.opening_balance||0)+tx+trOut+trIn+recOut+recIn+commonIn;
+  const storeIn=storePrepayments.filter(p=>p.account_id===a.id).reduce((s,p)=>s+Number(p.amount||0),0);
+  const storeRefund=storePrepaymentRefunds.filter(p=>p.account_id===a.id).reduce((s,p)=>s-Number(p.amount||0),0);
+  return Number(a.opening_balance||0)+tx+trOut+trIn+recOut+recIn+commonIn+storeIn+storeRefund;
 }
 
 function includedAssets(){
@@ -353,6 +361,196 @@ function renderSearch(){
 }
 function runSearch(){window.searchQuery=document.getElementById('searchInput')?.value.trim()||'';renderSearch();}
 function clearSearch(){window.searchQuery='';renderSearch();}
+
+/* =========================
+   STORE / PREPAYMENTS
+   ========================= */
+function storeUsageTotal(id){
+  return storePrepaymentUsages.filter(x=>x.prepayment_id===id).reduce((s,x)=>s+Number(x.amount||0),0);
+}
+function storeRefundTotal(id){
+  return storePrepaymentRefunds.filter(x=>x.prepayment_id===id).reduce((s,x)=>s+Number(x.amount||0),0);
+}
+function storeRemaining(x){
+  return Math.max(0,Number(x.amount||0)-storeUsageTotal(x.id)-storeRefundTotal(x.id));
+}
+function storeStatus(x){
+  const remain=storeRemaining(x);
+  if(remain<=0)return 'completed';
+  if(storeUsageTotal(x.id)>0||storeRefundTotal(x.id)>0)return 'partial';
+  return 'open';
+}
+function storeStatusText(x){
+  return {open:'尚未使用',partial:'部分使用',completed:'已結清'}[storeStatus(x)]||'尚未使用';
+}
+function storeStatusClass(x){
+  return storeStatus(x)==='completed'?'ok':storeStatus(x)==='partial'?'warn':'bad';
+}
+
+function renderStore(){
+  const month=monthRange(currentMonth);
+  const receivedThisMonth=storePrepayments.filter(x=>x.received_date>=month.start&&x.received_date<=month.end)
+    .reduce((s,x)=>s+Number(x.amount||0),0);
+  const refundedThisMonth=storePrepaymentRefunds.filter(x=>x.refund_date>=month.start&&x.refund_date<=month.end)
+    .reduce((s,x)=>s+Number(x.amount||0),0);
+  const totalRemaining=storePrepayments.reduce((s,x)=>s+storeRemaining(x),0);
+  const openCount=storePrepayments.filter(x=>storeRemaining(x)>0).length;
+
+  document.getElementById('main').innerHTML=`
+  <div class="section-head">
+    <div><div class="page-title">🛍️ 賣場／預收款</div>
+    <div class="page-sub">Luna Studio 等副業的客人先付款，先獨立保管，不直接算成個人收入。</div></div>
+    <button class="primary" style="width:auto;margin:0" onclick="openStorePrepaymentModal()">＋ 收到客人預付款</button>
+  </div>
+  ${monthPicker()}
+  <div class="cards">
+    <div class="card"><div class="metric-label">目前客人尚有預收款</div><div class="metric">${money(totalRemaining)}</div></div>
+    <div class="card"><div class="metric-label">${monthLabel(currentMonth)}收到預付款</div><div class="metric">${money(receivedThisMonth)}</div><div class="small">已進帳戶，但不算個人收入</div></div>
+    <div class="card"><div class="metric-label">${monthLabel(currentMonth)}退款</div><div class="metric red">${money(refundedThisMonth)}</div></div>
+    <div class="card"><div class="metric-label">尚有預收款客人</div><div class="metric">${openCount} 位</div></div>
+  </div>
+  <div class="card">
+    <div class="section-head"><div><h3>💰 客人預收款</h3><div class="small">收到時增加帳戶餘額；套用訂單只會減少客人欠款，不會重複增加帳戶。</div></div></div>
+    <div class="list">
+      ${storePrepayments.map(x=>{
+        const used=storeUsageTotal(x.id),refund=storeRefundTotal(x.id),remain=storeRemaining(x);
+        return `<div class="row">
+          <div class="row-left">
+            <div class="row-title">👤 ${esc(x.customer_name)} ${x.order_ref?` · ${esc(x.order_ref)}`:''}</div>
+            <div class="small">收款 ${dateText(x.received_date)} · 原收 ${money(x.amount)} · 已使用 ${money(used)}${refund?` · 已退款 ${money(refund)}`:''}</div>
+            ${x.note?`<div class="small">${esc(x.note)}</div>`:''}
+          </div>
+          <div class="actions">
+            <span class="pill ${storeStatusClass(x)}">${storeStatusText(x)}</span>
+            <b>${money(remain)}</b>
+            ${remain>0?`<button class="ghost" onclick="openStoreUsageModal('${x.id}')">📦 套用</button>`:''}
+            ${remain>0?`<button class="ghost" onclick="openStoreRefundModal('${x.id}')">↩ 退款</button>`:''}
+            <button class="ghost" onclick="openStorePrepaymentModal('${x.id}')">✏️ 編輯</button>
+            <button class="danger" onclick="deleteStorePrepayment('${x.id}')">🗑️</button>
+          </div>
+        </div>`;
+      }).join('')||'<div class="small">目前沒有客人預收款。</div>'}
+    </div>
+  </div>`;
+}
+
+function openStorePrepaymentModal(id){
+  const x=storePrepayments.find(a=>a.id===id)||{};
+  const editing=!!id;
+  const used=editing?storeUsageTotal(id):0, refunded=editing?storeRefundTotal(id):0;
+  if(editing && Number(x.amount||0)<used+refunded){
+    alert('這筆預收款的資料已經低於已使用／退款金額，請先檢查資料。');
+    return;
+  }
+  openModal(`<div class="modal-head"><h3>💰 ${editing?'編輯':'收到'}客人預付款</h3><button class="ghost" onclick="closeModal()">關閉</button></div>
+  <form onsubmit="saveStorePrepayment(event,'${id||''}')">
+    <div class="form-grid">
+      <div><label>客人姓名</label><input id="spCustomer" class="input" required placeholder="例如 小美" value="${esc(x.customer_name||'')}"></div>
+      <div><label>收款金額</label><input id="spAmount" class="input" type="number" min="${used+refunded}" step="0.01" required value="${x.amount??''}"></div>
+      <div><label>收到哪個帳戶</label><select id="spAccount" class="select" required>${selectAccounts()}</select></div>
+      <div><label>收款日期</label><input id="spDate" class="input" type="date" value="${x.received_date||today()}" required></div>
+      <div><label>訂單／備註編號</label><input id="spOrder" class="input" placeholder="例如 LUB20261006001" value="${esc(x.order_ref||'')}"></div>
+    </div>
+    <div class="small" style="margin-top:10px">這筆錢會增加指定帳戶餘額，但<strong>不會算進一般收入</strong>。等真正對應到訂單後，再用「📦 套用」扣掉預收餘額。</div>
+    <label>備註</label><input id="spNote" class="input" placeholder="例如 訂金、直播先付款" value="${esc(x.note||'')}">
+    <button class="primary">${editing?'儲存修改':'儲存預付款'}</button>
+  </form>`);
+  if(x.account_id&&document.getElementById('spAccount'))document.getElementById('spAccount').value=x.account_id;
+}
+
+async function saveStorePrepayment(e,id){
+  e.preventDefault();
+  const amount=Number(document.getElementById('spAmount').value);
+  const used=id?storeUsageTotal(id):0,refunded=id?storeRefundTotal(id):0;
+  if(amount<used+refunded)return alert(`收款金額不能低於已使用／退款合計 ${money(used+refunded)}。`);
+  const payload={
+    user_id:currentUser.id,
+    customer_name:document.getElementById('spCustomer').value.trim(),
+    amount,
+    account_id:document.getElementById('spAccount').value,
+    received_date:document.getElementById('spDate').value,
+    order_ref:document.getElementById('spOrder').value.trim(),
+    note:document.getElementById('spNote').value.trim()
+  };
+  const q=id?db.from('store_prepayments').update(payload).eq('id',id):db.from('store_prepayments').insert(payload);
+  const {error}=await q;
+  if(error)return alert(error.message);
+  closeModal();await loadAll();render();
+}
+
+function openStoreUsageModal(id){
+  const x=storePrepayments.find(a=>a.id===id);if(!x)return;
+  const remain=storeRemaining(x);
+  if(remain<=0)return alert('這筆預收款已沒有可使用餘額。');
+  openModal(`<div class="modal-head"><div><h3>📦 套用預收款</h3><div class="small">${esc(x.customer_name)} · 尚可使用 ${money(remain)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div>
+  <form onsubmit="saveStoreUsage(event,'${id}')">
+    <div class="form-grid">
+      <div><label>本次套用金額</label><input id="suAmount" class="input" type="number" min="0.01" max="${remain}" step="0.01" value="${remain}" required></div>
+      <div><label>使用日期</label><input id="suDate" class="input" type="date" value="${today()}" required></div>
+      <div><label>訂單編號</label><input id="suOrder" class="input" placeholder="例如 LUB20261006001" value="${esc(x.order_ref||'')}"></div>
+    </div>
+    <div class="small" style="margin-top:10px">這一步<strong>不會再次增加或扣除帳戶餘額</strong>，因為客人早已付款。它只會把這筆錢從「客人預收款」轉成「已使用」。</div>
+    <label>備註</label><input id="suNote" class="input" placeholder="例如 本次訂單尾款" >
+    <button class="primary">確認套用</button>
+  </form>`);
+}
+
+async function saveStoreUsage(e,id){
+  e.preventDefault();
+  const x=storePrepayments.find(a=>a.id===id);if(!x)return;
+  const amount=Number(document.getElementById('suAmount').value),remain=storeRemaining(x);
+  if(amount<=0||amount>remain)return alert('套用金額超過目前可用預收款。');
+  const {error}=await db.from('store_prepayment_usages').insert({
+    user_id:currentUser.id,prepayment_id:id,amount,
+    usage_date:document.getElementById('suDate').value,
+    order_ref:document.getElementById('suOrder').value.trim(),
+    note:document.getElementById('suNote').value.trim()
+  });
+  if(error)return alert(error.message);
+  closeModal();await loadAll();render();
+}
+
+function openStoreRefundModal(id){
+  const x=storePrepayments.find(a=>a.id===id);if(!x)return;
+  const remain=storeRemaining(x);
+  if(remain<=0)return alert('這筆預收款已沒有可退款餘額。');
+  if(!accounts.length){alert('請先建立退款帳戶。');setPage('accounts');return;}
+  openModal(`<div class="modal-head"><div><h3>↩ 退還客人預收款</h3><div class="small">${esc(x.customer_name)} · 可退 ${money(remain)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div>
+  <form onsubmit="saveStoreRefund(event,'${id}')">
+    <div class="form-grid">
+      <div><label>退款金額</label><input id="srAmount" class="input" type="number" min="0.01" max="${remain}" step="0.01" value="${remain}" required></div>
+      <div><label>退款日期</label><input id="srDate" class="input" type="date" value="${today()}" required></div>
+      <div><label>退款帳戶</label><select id="srAccount" class="select" required>${selectAccounts()}</select></div>
+    </div>
+    <label>備註</label><input id="srNote" class="input" placeholder="例如 客人取消訂單退款">
+    <div class="small" style="margin-top:10px">退款會從指定帳戶扣回，但<strong>不會算成一般支出</strong>，因為它只是把原本的客人預收款退回去。</div>
+    <button class="primary">確認退款</button>
+  </form>`);
+}
+
+async function saveStoreRefund(e,id){
+  e.preventDefault();
+  const x=storePrepayments.find(a=>a.id===id);if(!x)return;
+  const amount=Number(document.getElementById('srAmount').value),remain=storeRemaining(x);
+  if(amount<=0||amount>remain)return alert('退款金額超過目前可退餘額。');
+  const {error}=await db.from('store_prepayment_refunds').insert({
+    user_id:currentUser.id,prepayment_id:id,amount,
+    refund_date:document.getElementById('srDate').value,
+    account_id:document.getElementById('srAccount').value,
+    note:document.getElementById('srNote').value.trim()
+  });
+  if(error)return alert(error.message);
+  closeModal();await loadAll();render();
+}
+
+async function deleteStorePrepayment(id){
+  const x=storePrepayments.find(a=>a.id===id);if(!x)return;
+  if(!confirm(`確定刪除「${x.customer_name}」的這筆預收款？\n已套用與退款紀錄也會一併刪除。`))return;
+  const {error}=await db.from('store_prepayments').delete().eq('id',id);
+  if(error)return alert(error.message);
+  closeModal();await loadAll();render();
+}
+
 function coveredMonths(start,count){const [y,m]=start.split('-').map(Number);const end=new Date(y,m-1+count-1,1);return `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}`;}
 function memberPayments(memberId){return commonExpensePayments.filter(p=>p.common_expense_member_id===memberId);}
 function memberCovered(memberId,month){return memberPayments(memberId).some(p=>p.coverage_start.slice(0,7)<=month&&p.coverage_end.slice(0,7)>=month);}
@@ -900,6 +1098,7 @@ function quickAdd(){
   else if(currentPage==='bills')openBillModal();
   else if(currentPage==='goals')openGoalModal();
   else if(currentPage==='common')openCommonExpenseModal();
+  else if(currentPage==='store')openStorePrepaymentModal();
   else openTransactionModal();
 }
 
