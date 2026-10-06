@@ -68,6 +68,8 @@ main{padding:24px;min-width:0}.page-title{font-size:25px;font-weight:800;margin:
 <button class="navbtn active" data-page="dashboard">🏠 總覽</button>
 <button class="navbtn" data-page="transactions">🧾 記帳</button>
 <button class="navbtn" data-page="accounts">🏦 帳戶</button>
+<button class="navbtn" data-page="search">🔎 查詢</button>
+<button class="navbtn" data-page="common">👥 共同費用</button>
 <button class="navbtn" data-page="preorders">🛍️ 預購／待付款</button>
 <button class="navbtn" data-page="installments">💳 分期管理</button>
 <button class="navbtn" data-page="bills">🧾 固定繳費</button>
@@ -81,6 +83,8 @@ main{padding:24px;min-width:0}.page-title{font-size:25px;font-weight:800;margin:
 <button data-page="preorders">🛍️<br>預購</button>
 <button data-page="installments">💳<br>分期</button>
 <button data-page="accounts">🏦<br>帳戶</button>
+<button data-page="search">🔎<br>查詢</button>
+<button data-page="common">👥<br>共同</button>
 </div>
 <button class="fab" onclick="quickAdd()">＋</button>
 </div>
@@ -99,7 +103,9 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
    STATE / HELPERS
    ========================= */
 let currentUser=null,currentPage='dashboard';
+let currentMonth=new Date().toISOString().slice(0,7);
 let accounts=[],transactions=[],preorders=[],installments=[],installmentPayments=[],bills=[],goals=[],transfers=[],receivables=[],receivablePayments=[];
+let commonExpenses=[],commonExpenseMembers=[],commonExpensePayments=[],commonExpenseCharges=[];
 
 const money=n=>new Intl.NumberFormat('zh-TW',{style:'currency',currency:'TWD',maximumFractionDigits:0}).format(Number(n)||0);
 const dateText=d=>d?new Date(d+'T00:00:00').toLocaleDateString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
@@ -215,7 +221,7 @@ async function logout(){
    DATA
    ========================= */
 async function loadAll(){
-  const tables=[['accounts','accounts'],['transactions','transactions'],['preorders','preorders'],['installments','installments'],['installment_payments','installmentPayments'],['transfers','transfers'],['receivables','receivables'],['receivable_payments','receivablePayments'],['bills','bills'],['goals','goals']];
+  const tables=[['accounts','accounts'],['transactions','transactions'],['preorders','preorders'],['installments','installments'],['installment_payments','installmentPayments'],['transfers','transfers'],['receivables','receivables'],['receivable_payments','receivablePayments'],['bills','bills'],['goals','goals'],['common_expenses','commonExpenses'],['common_expense_members','commonExpenseMembers'],['common_expense_payments','commonExpensePayments'],['common_expense_charges','commonExpenseCharges']];
   for(const [table,key] of tables){
     const {data,error}=await db.from(table).select('*').order('created_at',{ascending:false});
     if(error){
@@ -235,6 +241,10 @@ async function loadAll(){
   receivablePayments=window.receivablePayments||[];
   bills=window.bills||[];
   goals=window.goals||[];
+  commonExpenses=window.commonExpenses||[];
+  commonExpenseMembers=window.commonExpenseMembers||[];
+  commonExpensePayments=window.commonExpensePayments||[];
+  commonExpenseCharges=window.commonExpenseCharges||[];
 }
 
 /* =========================
@@ -252,27 +262,32 @@ document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',(
    ========================= */
 function render(){
   const m=document.getElementById('main');
-  ({dashboard:renderDashboard,transactions:renderTransactions,accounts:renderAccounts,preorders:renderPreorders,installments:renderInstallments,bills:renderBills,goals:renderGoals}[currentPage]||renderDashboard)();
+  ({dashboard:renderDashboard,transactions:renderTransactions,accounts:renderAccounts,search:renderSearch,common:renderCommonExpenses,preorders:renderPreorders,installments:renderInstallments,bills:renderBills,goals:renderGoals}[currentPage]||renderDashboard)();
 }
 
-function monthRange(){
-  const d=new Date();
-  return {
-    start:new Date(d.getFullYear(),d.getMonth(),1).toISOString().slice(0,10),
-    end:new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10)
-  };
+function monthLabel(key){
+  const [y,m]=key.split('-').map(Number);
+  return `${y} 年 ${m} 月`;
 }
-
-function monthStats(){
-  const {start,end}=monthRange();
+function shiftMonth(key,delta){
+  const [y,m]=key.split('-').map(Number);
+  const d=new Date(y,m-1+delta,1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function monthRange(key=currentMonth){
+  const [y,m]=key.split('-').map(Number);
+  return {start:`${y}-${String(m).padStart(2,'0')}-01`,end:new Date(y,m,0).toISOString().slice(0,10)};
+}
+function monthStats(key=currentMonth){
+  const {start,end}=monthRange(key);
   const t=transactions.filter(x=>x.date>=start&&x.date<=end);
   let income=0,expense=0;
-  for(const x of t){
-    if(x.type==='income')income+=Number(x.amount);
-    if(x.type==='expense')expense+=Number(x.amount);
-  }
+  for(const x of t){if(x.type==='income')income+=Number(x.amount);if(x.type==='expense')expense+=Number(x.amount);}
   return {income,expense,balance:income-expense,t};
 }
+function changeMonth(delta){currentMonth=shiftMonth(currentMonth,delta);render();}
+function setMonth(key){if(/^\d{4}-\d{2}$/.test(key))currentMonth=key;render();}
+function monthPicker(){return `<div class="actions" style="align-items:center;margin:14px 0"><button class="ghost" onclick="changeMonth(-1)">‹</button><input class="input" style="width:auto;min-width:150px" type="month" value="${currentMonth}" onchange="setMonth(this.value)"><button class="ghost" onclick="changeMonth(1)">›</button><button class="ghost" onclick="setMonth(new Date().toISOString().slice(0,7))">回到本月</button></div>`;}
 
 function accountBalance(a){
   const tx=transactions.filter(t=>t.account_id===a.id).reduce((sum,t)=>{
@@ -284,7 +299,8 @@ function accountBalance(a){
   const trIn=transfers.filter(t=>t.to_account_id===a.id).reduce((s,t)=>s+Number(t.amount||0),0);
   const recOut=receivables.filter(r=>r.account_id===a.id).reduce((s,r)=>s-Number(r.amount||0),0);
   const recIn=receivablePayments.filter(p=>p.account_id===a.id).reduce((s,p)=>s+Number(p.amount||0),0);
-  return Number(a.opening_balance||0)+tx+trOut+trIn+recOut+recIn;
+  const commonIn=commonExpensePayments.filter(p=>p.account_id===a.id).reduce((s,p)=>s+Number(p.amount||0),0);
+  return Number(a.opening_balance||0)+tx+trOut+trIn+recOut+recIn+commonIn;
 }
 
 function includedAssets(){
@@ -315,34 +331,11 @@ function renderDashboard(){
   const s=monthStats(),totalAssets=includedAssets(),allAssets=accounts.reduce((a,x)=>a+accountBalance(x),0),excluded=excludedAssets(),c=committed(),r=receivableStats();
   document.getElementById('main').innerHTML=`
   <div class="page-title">🐻‘s Money</div>
-  <div class="page-sub">你的私人財務中控台 · ${new Date().toLocaleDateString('zh-TW',{year:'numeric',month:'long'})}</div>
-  <div class="cards">
-    <div class="card"><div class="metric-label">本月收入</div><div class="metric green">${money(s.income)}</div></div>
-    <div class="card"><div class="metric-label">本月支出</div><div class="metric red">${money(s.expense)}</div></div>
-    <div class="card"><div class="metric-label">本月結餘</div><div class="metric">${money(s.balance)}</div></div>
-    <div class="card"><div class="metric-label">目前可計入總資產</div><div class="metric">${money(totalAssets)}</div><div class="small">全部帳戶 ${money(allAssets)} · 不計入 ${money(excluded)}</div></div>
-  </div>
-  <div class="grid2">
-    <div class="card">
-      <div class="section-head"><h3>⚠️ 未來待支付</h3></div>
-      <div class="list">
-        <div class="row"><div class="row-title">🛍️ 預購／待付款</div><div class="amount">${money(c.po)}</div></div>
-        <div class="row"><div class="row-title">💳 分期剩餘</div><div class="amount">${money(c.ins)}</div></div>
-        <div class="row"><div class="row-title">🧾 待繳帳單</div><div class="amount">${money(c.bi)}</div></div>
-        <div class="row"><div class="row-title">承諾支出合計</div><div class="amount expense">${money(c.total)}</div></div>
-        <div class="row"><div class="row-title">🧾 代墊待收回</div><div class="amount">${money(r.advance)}</div></div>
-        <div class="row"><div class="row-title">💸 借款待收回</div><div class="amount">${money(r.loan)}</div></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="section-head"><h3>🎯 儲蓄目標</h3><button class="ghost" onclick="setPage('goals')">查看全部</button></div>
-      ${goals.slice(0,3).map(g=>`<div style="margin:12px 0"><div style="display:flex;justify-content:space-between"><b>${esc(g.name)}</b><span class="small">${money(g.current_amount)} / ${money(g.target_amount)}</span></div><div class="progress"><div style="width:${pct(g.current_amount,g.target_amount)}%"></div></div></div>`).join('')||'<div class="small">還沒有儲蓄目標</div>'}
-    </div>
-  </div>
-  <div class="card" style="margin-top:16px">
-    <div class="section-head"><h3>🧾 最近交易</h3><button class="ghost" onclick="setPage('transactions')">查看全部</button></div>
-    <div class="list">${transactions.slice(0,8).map(t=>transactionRow(t)).join('')||'<div class="small">還沒有記帳資料</div>'}</div>
-  </div>`;
+  <div class="page-sub">你的私人財務中控台 · ${monthLabel(currentMonth)}</div>
+  ${monthPicker()}
+  <div class="cards"><div class="card"><div class="metric-label">${monthLabel(currentMonth)}收入</div><div class="metric green">${money(s.income)}</div></div><div class="card"><div class="metric-label">${monthLabel(currentMonth)}支出</div><div class="metric red">${money(s.expense)}</div></div><div class="card"><div class="metric-label">${monthLabel(currentMonth)}結餘</div><div class="metric">${money(s.balance)}</div></div><div class="card"><div class="metric-label">目前可計入總資產</div><div class="metric">${money(totalAssets)}</div><div class="small">全部帳戶 ${money(allAssets)} · 不計入 ${money(excluded)}</div></div></div>
+  <div class="grid2"><div class="card"><div class="section-head"><h3>⚠️ 未來待支付</h3></div><div class="list"><div class="row"><div class="row-title">🛍️ 預購／待付款</div><div class="amount">${money(c.po)}</div></div><div class="row"><div class="row-title">💳 分期剩餘</div><div class="amount">${money(c.ins)}</div></div><div class="row"><div class="row-title">🧾 待繳帳單</div><div class="amount">${money(c.bi)}</div></div><div class="row"><div class="row-title">承諾支出合計</div><div class="amount expense">${money(c.total)}</div></div><div class="row"><div class="row-title">🧾 代墊待收回</div><div class="amount">${money(r.advance)}</div></div><div class="row"><div class="row-title">💸 借款待收回</div><div class="amount">${money(r.loan)}</div></div></div></div><div class="card"><div class="section-head"><h3>🎯 儲蓄目標</h3><button class="ghost" onclick="setPage('goals')">查看全部</button></div>${goals.slice(0,3).map(g=>`<div style="margin:12px 0"><div style="display:flex;justify-content:space-between"><b>${esc(g.name)}</b><span class="small">${money(g.current_amount)} / ${money(g.target_amount)}</span></div><div class="progress"><div style="width:${pct(g.current_amount,g.target_amount)}%"></div></div></div>`).join('')||'<div class="small">還沒有儲蓄目標</div>'}</div></div>
+  <div class="card" style="margin-top:16px"><div class="section-head"><h3>🧾 ${monthLabel(currentMonth)}交易</h3><button class="ghost" onclick="setPage('transactions')">查看全部</button></div><div class="list">${s.t.slice(0,8).map(t=>transactionRow(t)).join('')||'<div class="small">這個月份還沒有交易資料</div>'}</div></div>`;
 }
 
 function transactionRow(t){
@@ -352,17 +345,43 @@ function transactionRow(t){
 /* =========================
    PAGES
    ========================= */
+function renderSearch(){
+  const q=window.searchQuery||'';
+  const matches=transactions.filter(t=>{if(!q)return true;const hay=[t.category,t.note,t.amount,t.date,accounts.find(a=>a.id===t.account_id)?.name||''].join(' ').toLowerCase();return hay.includes(q.toLowerCase());}).sort((a,b)=>b.date.localeCompare(a.date));
+  const income=matches.filter(x=>x.type==='income').reduce((s,x)=>s+Number(x.amount),0),expense=matches.filter(x=>x.type==='expense').reduce((s,x)=>s+Number(x.amount),0);
+  document.getElementById('main').innerHTML=`<div class="page-title">🔎 查詢</div><div class="page-sub">搜尋分類、備註、帳戶、金額或日期，並自動計算合計</div><div class="card" style="margin-top:16px"><div class="actions"><input id="searchInput" class="input" style="flex:1;min-width:220px" value="${esc(q)}" placeholder="例如：資費、Spotify、飲食" onkeydown="if(event.key==='Enter')runSearch()"><button class="primary" style="width:auto;margin:0" onclick="runSearch()">搜尋</button><button class="ghost" onclick="clearSearch()">清除</button></div></div><div class="cards"><div class="card"><div class="metric-label">符合筆數</div><div class="metric">${matches.length}</div></div><div class="card"><div class="metric-label">收入合計</div><div class="metric green">${money(income)}</div></div><div class="card"><div class="metric-label">支出合計</div><div class="metric red">${money(expense)}</div></div><div class="card"><div class="metric-label">淨額</div><div class="metric">${money(income-expense)}</div></div></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>日期</th><th>類型</th><th>分類</th><th>帳戶</th><th>金額</th><th>備註</th></tr></thead><tbody>${matches.map(t=>`<tr><td>${dateText(t.date)}</td><td>${t.type==='income'?'收入':'支出'}</td><td>${esc(t.category||'-')}</td><td>${esc(accounts.find(a=>a.id===t.account_id)?.name||'-')}</td><td class="${t.type==='income'?'income':'expense'}">${t.type==='income'?'+':'-'}${money(t.amount)}</td><td>${esc(t.note||'')}</td></tr>`).join('')||'<tr><td colspan="6">沒有符合的紀錄</td></tr>'}</tbody></table></div></div>`;
+}
+function runSearch(){window.searchQuery=document.getElementById('searchInput')?.value.trim()||'';renderSearch();}
+function clearSearch(){window.searchQuery='';renderSearch();}
+function coveredMonths(start,count){const [y,m]=start.split('-').map(Number);const end=new Date(y,m-1+count-1,1);return `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}`;}
+function memberPayments(memberId){return commonExpensePayments.filter(p=>p.common_expense_member_id===memberId);}
+function memberCovered(memberId,month){return memberPayments(memberId).some(p=>p.coverage_start.slice(0,7)<=month&&p.coverage_end.slice(0,7)>=month);}
+function memberPaidThrough(memberId){const ps=memberPayments(memberId).slice().sort((a,b)=>a.coverage_end.localeCompare(b.coverage_end));return ps.length?ps[ps.length-1].coverage_end.slice(0,7):null;}
+function commonExpenseMonthlyMembers(id){return commonExpenseMembers.filter(m=>m.common_expense_id===id);}
+function commonExpenseChargeFor(id,month){return commonExpenseCharges.find(c=>c.common_expense_id===id&&c.charge_month.slice(0,7)===month);}
+
+function renderCommonExpenses(){
+  document.getElementById('main').innerHTML=`<div class="section-head"><div><div class="page-title">👥 共同費用</div><div class="page-sub">管理 Spotify、家庭會員等「我先付款、大家分攤」的費用</div></div><button class="primary" style="width:auto;margin:0" onclick="openCommonExpenseModal()">＋ 新增共同費用</button></div>${monthPicker()}<div class="list">${commonExpenses.map(x=>{const ms=commonExpenseMonthlyMembers(x.id),charge=commonExpenseChargeFor(x.id,currentMonth),others=ms.reduce((s,m)=>s+Number(m.monthly_share||0),0),self=Number(x.self_share||0);return `<div class="card"><div class="section-head"><div><h3>${esc(x.name)}</h3><div class="small">每月實際扣款 ${money(x.monthly_amount)} · ${monthLabel(currentMonth)}</div></div><span class="pill ${charge?'ok':'warn'}">${charge?'已記錄本月扣款':'尚未記錄本月扣款'}</span></div><div class="cards" style="margin:12px 0"><div class="card"><div class="metric-label">自己分攤</div><div class="metric">${money(self)}</div></div><div class="card"><div class="metric-label">其他人本月應分攤</div><div class="metric">${money(others)}</div></div><div class="card"><div class="metric-label">本月自己實際負擔</div><div class="metric">${money(Number(x.monthly_amount)-others)}</div></div></div><div class="actions"><button class="primary" style="width:auto;margin:0" onclick="openCommonChargeModal('${x.id}')">${charge?'查看本月扣款':'💳 記錄本月扣款'}</button><button class="ghost" onclick="openCommonExpenseDetail('${x.id}')">👥 成員／預付款</button></div></div>`}).join('')||'<div class="card small">還沒有共同費用，例如可以先建立 Spotify。</div>'}</div>`;
+}
+function openCommonExpenseModal(){openModal(`<div class="modal-head"><h3>👥 新增共同費用</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonExpense(event)"><label>名稱</label><input id="ceName" class="input" required placeholder="例如 Spotify"><div class="form-grid"><div><label>每月實際扣款</label><input id="ceAmount" class="input" type="number" min="0" step="0.01" required placeholder="例如 298"></div><div><label>自己每月分攤</label><input id="ceSelf" class="input" type="number" min="0" step="0.01" value="50" required></div><div><label>開始月份</label><input id="ceStart" class="input" type="month" value="${currentMonth}" required></div></div><div class="small" style="margin-top:10px">例如 Spotify：實際每月 $298、6 人、你自己 $50；其他成員各自設定每月 $50。有人一次付半年／一年時，付款會標記覆蓋月份，不會被算成一般收入。</div><button class="primary">建立</button></form>`);}
+async function saveCommonExpense(e){e.preventDefault();const payload={user_id:currentUser.id,name:document.getElementById('ceName').value.trim(),monthly_amount:Number(document.getElementById('ceAmount').value),self_share:Number(document.getElementById('ceSelf').value),start_month:document.getElementById('ceStart').value+'-01'};const {error}=await db.from('common_expenses').insert(payload);if(error)return alert(error.message);closeModal();await loadAll();render();}
+function openCommonExpenseDetail(id){const x=commonExpenses.find(a=>a.id===id);if(!x)return;const ms=commonExpenseMonthlyMembers(id);openModal(`<div class="modal-head"><div><h3>👥 ${esc(x.name)}</h3><div class="small">每月實際 ${money(x.monthly_amount)} · 目前查看 ${monthLabel(currentMonth)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div><div class="actions" style="margin-top:14px"><button class="primary" style="width:auto;margin:0" onclick="openCommonMemberModal('${id}')">＋ 新增成員</button></div><div class="list" style="margin-top:14px">${ms.map(m=>{const covered=memberCovered(m.id,currentMonth);return `<div class="row"><div><b>${esc(m.name)}</b><div class="small">每月 ${money(m.monthly_share)} · ${covered?'🟢 已付到本月':'🔴 本月未收'}${memberPaidThrough(m.id)?' · 最近預付到 '+monthLabel(memberPaidThrough(m.id)):''}</div></div><div class="actions"><button class="ghost" onclick="openCommonPaymentModal('${m.id}')">💰 收款／預付</button><button class="danger" onclick="deleteCommonMember('${m.id}')">刪除</button></div></div>`}).join('')||'<div class="card small">還沒有成員，先新增其他 5 位分攤者。</div>'}</div>`);}
+function openCommonMemberModal(expenseId){openModal(`<div class="modal-head"><h3>＋ 新增分攤成員</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonMember(event,'${expenseId}')"><label>成員名稱</label><input id="cmName" class="input" required placeholder="例如 小明"><label>每月分攤</label><input id="cmShare" class="input" type="number" min="0" step="0.01" value="50" required><button class="primary">新增</button></form>`);}
+async function saveCommonMember(e,expenseId){e.preventDefault();const {error}=await db.from('common_expense_members').insert({user_id:currentUser.id,common_expense_id:expenseId,name:document.getElementById('cmName').value.trim(),monthly_share:Number(document.getElementById('cmShare').value)});if(error)return alert(error.message);closeModal();await loadAll();openCommonExpenseDetail(expenseId);}
+function openCommonPaymentModal(memberId){const m=commonExpenseMembers.find(x=>x.id===memberId);if(!m)return;openModal(`<div class="modal-head"><h3>💰 收到 ${esc(m.name)} 的分攤款</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonPayment(event,'${memberId}')"><div class="form-grid"><div><label>付款金額</label><input id="cpAmount" class="input" type="number" min="0.01" step="0.01" value="${Number(m.monthly_share)||0}" required></div><div><label>預付幾個月</label><select id="cpMonths" class="select"><option value="1">1 個月</option><option value="3">3 個月</option><option value="6">半年（6 個月）</option><option value="12">一年（12 個月）</option></select></div><div><label>覆蓋開始月份</label><input id="cpStart" class="input" type="month" value="${currentMonth}" required></div><div><label>收到日期</label><input id="cpDate" class="input" type="date" value="${today()}" required></div><div><label>收到哪個帳戶</label><select id="cpAccount" class="select" required>${selectAccounts()}</select></div></div><div class="small" style="margin-top:10px">這筆錢會增加指定帳戶餘額，但不會算進收入統計；例如 $300 預付半年，就是覆蓋 6 個月份。</div><label>備註</label><input id="cpNote" class="input" placeholder="例如 Spotify 半年費"><button class="primary">儲存分攤款</button></form>`);}
+async function saveCommonPayment(e,memberId){e.preventDefault();const m=commonExpenseMembers.find(x=>x.id===memberId),months=Number(document.getElementById('cpMonths').value),start=document.getElementById('cpStart').value,amount=Number(document.getElementById('cpAmount').value),end=coveredMonths(start,months);const {error}=await db.from('common_expense_payments').insert({user_id:currentUser.id,common_expense_member_id:memberId,amount,months_covered:months,coverage_start:start+'-01',coverage_end:end+'-01',payment_date:document.getElementById('cpDate').value,account_id:document.getElementById('cpAccount').value,note:document.getElementById('cpNote').value.trim()});if(error)return alert(error.message);closeModal();await loadAll();openCommonExpenseDetail(m.common_expense_id);}
+function openCommonChargeModal(id){const x=commonExpenses.find(a=>a.id===id),existing=commonExpenseChargeFor(id,currentMonth);if(existing){openModal(`<div class="modal-head"><h3>💳 ${esc(x.name)}｜${monthLabel(currentMonth)}</h3><button class="ghost" onclick="closeModal()">關閉</button></div><div class="card"><div class="small">實際扣款</div><div class="metric">${money(existing.amount)}</div><div class="small">付款日期 ${dateText(existing.payment_date)} · 帳戶 ${esc(accounts.find(a=>a.id===existing.account_id)?.name||'-')}</div></div><div class="actions" style="margin-top:14px"><button class="danger" onclick="deleteCommonCharge('${existing.id}')">刪除本月扣款紀錄</button></div>`);return;}if(!accounts.length){alert('請先建立付款帳戶。');setPage('accounts');return;}openModal(`<div class="modal-head"><h3>💳 ${esc(x.name)}｜記錄 ${monthLabel(currentMonth)}扣款</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCommonCharge(event,'${id}')"><div class="form-grid"><div><label>實際扣款金額</label><input id="ccAmount" class="input" type="number" min="0" step="0.01" value="${x.monthly_amount}" required></div><div><label>付款日期</label><input id="ccDate" class="input" type="date" value="${today()}" required></div><div><label>扣款帳戶</label><select id="ccAccount" class="select" required>${selectAccounts()}</select></div></div><div class="small">儲存後會建立一筆真正的支出交易；其他人的分攤款不會變成收入，而是直接反映在帳戶餘額。</div><button class="primary">✓ 記錄扣款</button></form>`);}
+async function saveCommonCharge(e,id){e.preventDefault();const x=commonExpenses.find(a=>a.id===id),amount=Number(document.getElementById('ccAmount').value),date=document.getElementById('ccDate').value,accountId=document.getElementById('ccAccount').value;const tx=await db.from('transactions').insert({user_id:currentUser.id,type:'expense',amount,date,account_id:accountId,category:'共同費用',note:`${x.name}｜${monthLabel(currentMonth)}`}).select('id').single();if(tx.error)return alert(tx.error.message);const {error}=await db.from('common_expense_charges').insert({user_id:currentUser.id,common_expense_id:id,charge_month:currentMonth+'-01',amount,payment_date:date,account_id:accountId,transaction_id:tx.data.id,note:`${x.name}｜${monthLabel(currentMonth)}`});if(error){await db.from('transactions').delete().eq('id',tx.data.id);return alert(error.message);}closeModal();await loadAll();render();}
+async function deleteCommonCharge(id){if(!confirm('刪除本月扣款紀錄？這也會刪除對應的共同費用支出。'))return;const c=commonExpenseCharges.find(x=>x.id===id);if(c?.transaction_id)await db.from('transactions').delete().eq('id',c.transaction_id);const {error}=await db.from('common_expense_charges').delete().eq('id',id);if(error)return alert(error.message);closeModal();await loadAll();render();}
+async function deleteCommonMember(id){if(!confirm('刪除這位成員及其預付款紀錄？'))return;const m=commonExpenseMembers.find(x=>x.id===id);const {error}=await db.from('common_expense_members').delete().eq('id',id);if(error)return alert(error.message);await loadAll();openCommonExpenseDetail(m.common_expense_id);}
+
 function renderTransactions(){
+  const {start,end}=monthRange();
   const rows=[
-    ...transactions.map(t=>({kind:'tx',date:t.date,created_at:t.created_at,data:t})),
-    ...transfers.map(t=>({kind:'transfer',date:t.date,created_at:t.created_at,data:t}))
+    ...transactions.filter(t=>t.date>=start&&t.date<=end).map(t=>({kind:'tx',date:t.date,created_at:t.created_at,data:t})),
+    ...transfers.filter(t=>t.date>=start&&t.date<=end).map(t=>({kind:'transfer',date:t.date,created_at:t.created_at,data:t}))
   ].sort((a,b)=>new Date((b.date||'')+'T00:00:00')-new Date((a.date||'')+'T00:00:00'));
-  document.getElementById('main').innerHTML=`
-  <div class="section-head"><div><div class="page-title">🧾 記帳</div><div class="page-sub">所有收入、支出與帳戶轉帳</div></div><button class="primary" style="width:auto;margin:0" onclick="openTransactionModal()">＋ 新增</button></div>
-  <div class="actions" style="margin-bottom:14px"><button class="ghost" onclick="openTransferModal()">🔄 帳戶轉帳</button><button class="ghost" onclick="openReceivableModal('advance')">🧾 新增代墊</button><button class="ghost" onclick="openReceivableModal('loan')">💸 新增借款</button></div>
-  <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>日期</th><th>類型</th><th>分類</th><th>帳戶</th><th>金額</th><th>備註</th><th></th></tr></thead><tbody>
-  ${rows.map(row=>row.kind==='transfer'?transferRow(row.data):`<tr><td>${dateText(row.data.date)}</td><td>${row.data.type==='income'?'收入':'支出'}</td><td>${esc(row.data.category||'-')}</td><td>${esc(accounts.find(a=>a.id===row.data.account_id)?.name||'-')}</td><td class="${row.data.type==='income'?'income':'expense'}">${row.data.type==='income'?'+':'-'}${money(row.data.amount)}</td><td>${esc(row.data.note||'')}</td><td><button class="danger" onclick="deleteRecord('transactions','${row.data.id}')">刪除</button></td></tr>`).join('')}
-  </tbody></table></div></div>`;
+  document.getElementById('main').innerHTML=`<div class="section-head"><div><div class="page-title">🧾 記帳</div><div class="page-sub">查看指定月份的收入、支出與帳戶轉帳</div></div><button class="primary" style="width:auto;margin:0" onclick="openTransactionModal()">＋ 新增</button></div>${monthPicker()}<div class="actions" style="margin-bottom:14px"><button class="ghost" onclick="openTransferModal()">🔄 帳戶轉帳</button><button class="ghost" onclick="openReceivableModal('advance')">🧾 新增代墊</button><button class="ghost" onclick="openReceivableModal('loan')">💸 新增借款</button></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>日期</th><th>類型</th><th>分類</th><th>帳戶</th><th>金額</th><th>備註</th><th></th></tr></thead><tbody>${rows.map(row=>row.kind==='transfer'?transferRow(row.data):`<tr><td>${dateText(row.data.date)}</td><td>${row.data.type==='income'?'收入':'支出'}</td><td>${esc(row.data.category||'-')}</td><td>${esc(accounts.find(a=>a.id===row.data.account_id)?.name||'-')}</td><td class="${row.data.type==='income'?'income':'expense'}">${row.data.type==='income'?'+':'-'}${money(row.data.amount)}</td><td>${esc(row.data.note||'')}</td><td><button class="danger" onclick="deleteRecord('transactions','${row.data.id}')">刪除</button></td></tr>`).join('')||`<tr><td colspan="7">${monthLabel(currentMonth)}沒有紀錄</td></tr>`}</tbody></table></div></div>`;
 }
 
 function transferRow(t){
@@ -753,6 +772,7 @@ function quickAdd(){
   else if(currentPage==='installments')openInstallmentModal();
   else if(currentPage==='bills')openBillModal();
   else if(currentPage==='goals')openGoalModal();
+  else if(currentPage==='common')openCommonExpenseModal();
   else openTransactionModal();
 }
 
