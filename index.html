@@ -99,7 +99,7 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
    STATE / HELPERS
    ========================= */
 let currentUser=null,currentPage='dashboard';
-let accounts=[],transactions=[],preorders=[],installments=[],installmentPayments=[],bills=[],goals=[];
+let accounts=[],transactions=[],preorders=[],installments=[],installmentPayments=[],bills=[],goals=[],transfers=[],receivables=[],receivablePayments=[];
 
 const money=n=>new Intl.NumberFormat('zh-TW',{style:'currency',currency:'TWD',maximumFractionDigits:0}).format(Number(n)||0);
 const dateText=d=>d?new Date(d+'T00:00:00').toLocaleDateString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
@@ -215,7 +215,7 @@ async function logout(){
    DATA
    ========================= */
 async function loadAll(){
-  const tables=[['accounts','accounts'],['transactions','transactions'],['preorders','preorders'],['installments','installments'],['installment_payments','installmentPayments'],['bills','bills'],['goals','goals']];
+  const tables=[['accounts','accounts'],['transactions','transactions'],['preorders','preorders'],['installments','installments'],['installment_payments','installmentPayments'],['transfers','transfers'],['receivables','receivables'],['receivable_payments','receivablePayments'],['bills','bills'],['goals','goals']];
   for(const [table,key] of tables){
     const {data,error}=await db.from(table).select('*').order('created_at',{ascending:false});
     if(error){
@@ -230,6 +230,9 @@ async function loadAll(){
   preorders=window.preorders||[];
   installments=window.installments||[];
   installmentPayments=window.installmentPayments||[];
+  transfers=window.transfers||[];
+  receivables=window.receivables||[];
+  receivablePayments=window.receivablePayments||[];
   bills=window.bills||[];
   goals=window.goals||[];
 }
@@ -272,9 +275,33 @@ function monthStats(){
 }
 
 function accountBalance(a){
-  return Number(a.opening_balance||0)
-  +transactions.filter(t=>t.account_id===a.id&&t.type!=='transfer').reduce((s,t)=>s+(t.type==='income'?Number(t.amount):-Number(t.amount)),0)
-  +transactions.filter(t=>t.type==='transfer'&&t.account_id===a.id).reduce((s,t)=>s+(t.transfer_direction==='in'?Number(t.amount):-Number(t.amount)),0);
+  const tx=transactions.filter(t=>t.account_id===a.id).reduce((sum,t)=>{
+    if(t.type==='income')return sum+Number(t.amount);
+    if(t.type==='expense')return sum-Number(t.amount);
+    return sum;
+  },0);
+  const trOut=transfers.filter(t=>t.from_account_id===a.id).reduce((s,t)=>s-Number(t.amount||0)-Number(t.fee||0),0);
+  const trIn=transfers.filter(t=>t.to_account_id===a.id).reduce((s,t)=>s+Number(t.amount||0),0);
+  const recOut=receivables.filter(r=>r.account_id===a.id).reduce((s,r)=>s-Number(r.amount||0),0);
+  const recIn=receivablePayments.filter(p=>p.account_id===a.id).reduce((s,p)=>s+Number(p.amount||0),0);
+  return Number(a.opening_balance||0)+tx+trOut+trIn+recOut+recIn;
+}
+
+function includedAssets(){
+  return accounts.filter(a=>a.include_in_total!==false).reduce((s,a)=>s+accountBalance(a),0);
+}
+
+function excludedAssets(){
+  return accounts.filter(a=>a.include_in_total===false).reduce((s,a)=>s+accountBalance(a),0);
+}
+
+function receivableStats(){
+  let advance=0,loan=0;
+  for(const r of receivables){
+    const remaining=Math.max(0,Number(r.amount||0)-Number(r.returned_amount||0));
+    if(r.kind==='loan')loan+=remaining; else advance+=remaining;
+  }
+  return {advance,loan,total:advance+loan};
 }
 
 function committed(){
@@ -285,7 +312,7 @@ function committed(){
 }
 
 function renderDashboard(){
-  const s=monthStats(),totalAssets=accounts.reduce((a,x)=>a+accountBalance(x),0),c=committed();
+  const s=monthStats(),totalAssets=includedAssets(),allAssets=accounts.reduce((a,x)=>a+accountBalance(x),0),excluded=excludedAssets(),c=committed(),r=receivableStats();
   document.getElementById('main').innerHTML=`
   <div class="page-title">🐻‘s Money</div>
   <div class="page-sub">你的私人財務中控台 · ${new Date().toLocaleDateString('zh-TW',{year:'numeric',month:'long'})}</div>
@@ -293,7 +320,7 @@ function renderDashboard(){
     <div class="card"><div class="metric-label">本月收入</div><div class="metric green">${money(s.income)}</div></div>
     <div class="card"><div class="metric-label">本月支出</div><div class="metric red">${money(s.expense)}</div></div>
     <div class="card"><div class="metric-label">本月結餘</div><div class="metric">${money(s.balance)}</div></div>
-    <div class="card"><div class="metric-label">目前總資產</div><div class="metric">${money(totalAssets)}</div></div>
+    <div class="card"><div class="metric-label">目前可計入總資產</div><div class="metric">${money(totalAssets)}</div><div class="small">全部帳戶 ${money(allAssets)} · 不計入 ${money(excluded)}</div></div>
   </div>
   <div class="grid2">
     <div class="card">
@@ -303,6 +330,8 @@ function renderDashboard(){
         <div class="row"><div class="row-title">💳 分期剩餘</div><div class="amount">${money(c.ins)}</div></div>
         <div class="row"><div class="row-title">🧾 待繳帳單</div><div class="amount">${money(c.bi)}</div></div>
         <div class="row"><div class="row-title">承諾支出合計</div><div class="amount expense">${money(c.total)}</div></div>
+        <div class="row"><div class="row-title">🧾 代墊待收回</div><div class="amount">${money(r.advance)}</div></div>
+        <div class="row"><div class="row-title">💸 借款待收回</div><div class="amount">${money(r.loan)}</div></div>
       </div>
     </div>
     <div class="card">
@@ -324,18 +353,35 @@ function transactionRow(t){
    PAGES
    ========================= */
 function renderTransactions(){
+  const rows=[
+    ...transactions.map(t=>({kind:'tx',date:t.date,created_at:t.created_at,data:t})),
+    ...transfers.map(t=>({kind:'transfer',date:t.date,created_at:t.created_at,data:t}))
+  ].sort((a,b)=>new Date((b.date||'')+'T00:00:00')-new Date((a.date||'')+'T00:00:00'));
   document.getElementById('main').innerHTML=`
-  <div class="section-head"><div><div class="page-title">🧾 記帳</div><div class="page-sub">所有收入、支出與轉帳</div></div><button class="primary" style="width:auto;margin:0" onclick="openTransactionModal()">＋ 新增</button></div>
+  <div class="section-head"><div><div class="page-title">🧾 記帳</div><div class="page-sub">所有收入、支出與帳戶轉帳</div></div><button class="primary" style="width:auto;margin:0" onclick="openTransactionModal()">＋ 新增</button></div>
+  <div class="actions" style="margin-bottom:14px"><button class="ghost" onclick="openTransferModal()">🔄 帳戶轉帳</button><button class="ghost" onclick="openReceivableModal('advance')">🧾 新增代墊</button><button class="ghost" onclick="openReceivableModal('loan')">💸 新增借款</button></div>
   <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>日期</th><th>類型</th><th>分類</th><th>帳戶</th><th>金額</th><th>備註</th><th></th></tr></thead><tbody>
-  ${transactions.map(t=>`<tr><td>${dateText(t.date)}</td><td>${t.type==='income'?'收入':t.type==='expense'?'支出':'轉帳'}</td><td>${esc(t.category||'-')}</td><td>${esc(accounts.find(a=>a.id===t.account_id)?.name||'-')}</td><td class="${t.type==='income'?'income':'expense'}">${t.type==='income'?'+':'-'}${money(t.amount)}</td><td>${esc(t.note||'')}</td><td><button class="danger" onclick="deleteRecord('transactions','${t.id}')">刪除</button></td></tr>`).join('')}
+  ${rows.map(row=>row.kind==='transfer'?transferRow(row.data):`<tr><td>${dateText(row.data.date)}</td><td>${row.data.type==='income'?'收入':'支出'}</td><td>${esc(row.data.category||'-')}</td><td>${esc(accounts.find(a=>a.id===row.data.account_id)?.name||'-')}</td><td class="${row.data.type==='income'?'income':'expense'}">${row.data.type==='income'?'+':'-'}${money(row.data.amount)}</td><td>${esc(row.data.note||'')}</td><td><button class="danger" onclick="deleteRecord('transactions','${row.data.id}')">刪除</button></td></tr>`).join('')}
   </tbody></table></div></div>`;
 }
 
-function renderAccounts(){
-  document.getElementById('main').innerHTML=`
-  <div class="section-head"><div><div class="page-title">🏦 我的帳戶</div><div class="page-sub">管理現金、銀行、信用卡等資金</div></div><button class="primary" style="width:auto;margin:0" onclick="openAccountModal()">＋ 新增帳戶</button></div>
-  <div class="cards">${accounts.map(a=>`<div class="card"><div class="metric-label">${esc(a.type||'帳戶')}</div><div class="metric">${money(accountBalance(a))}</div><div style="display:flex;justify-content:space-between;margin-top:10px"><b>${esc(a.name)}</b><button class="danger" onclick="deleteRecord('accounts','${a.id}')">刪除</button></div></div>`).join('')}</div>`;
+function transferRow(t){
+  const from=accounts.find(a=>a.id===t.from_account_id)?.name||'-',to=accounts.find(a=>a.id===t.to_account_id)?.name||'-';
+  return `<tr><td>${dateText(t.date)}</td><td>🔄 轉帳</td><td>帳戶轉帳</td><td>${esc(from)} → ${esc(to)}</td><td>${money(t.amount)}</td><td>${esc(t.note||'')}${Number(t.fee||0)?` · 手續費 ${money(t.fee)}`:''}</td><td><button class="danger" onclick="deleteTransfer('${t.id}')">刪除</button></td></tr>`;
 }
+
+
+function renderAccounts(){
+  const included=accounts.filter(a=>a.include_in_total!==false).reduce((s,a)=>s+accountBalance(a),0),excluded=accounts.filter(a=>a.include_in_total===false).reduce((s,a)=>s+accountBalance(a),0);
+  document.getElementById('main').innerHTML=`
+  <div class="section-head"><div><div class="page-title">🏦 我的帳戶</div><div class="page-sub">可編輯帳戶資料，也可以設定是否計入目前總資產</div></div><button class="primary" style="width:auto;margin:0" onclick="openAccountModal()">＋ 新增帳戶</button></div>
+  <div class="cards"><div class="card"><div class="metric-label">可計入總資產</div><div class="metric">${money(included)}</div></div><div class="card"><div class="metric-label">不計入總資產</div><div class="metric">${money(excluded)}</div></div></div>
+  <div class="actions" style="margin-bottom:14px"><button class="primary" style="width:auto;margin:0" onclick="openTransferModal()">🔄 帳戶轉帳</button></div>
+  <div class="cards">${accounts.map(a=>`<div class="card"><div class="metric-label">${esc(a.type||'帳戶')} · ${a.include_in_total===false?'🔒 不計入總資產':'✅ 計入總資產'}</div><div class="metric">${money(accountBalance(a))}</div><div style="display:flex;justify-content:space-between;gap:8px;margin-top:10px;align-items:center"><b>${esc(a.name)}</b><div class="actions"><button class="ghost" onclick="openAccountModal('${a.id}')">編輯</button><button class="danger" onclick="deleteRecord('accounts','${a.id}')">刪除</button></div></div></div>`).join('')||'<div class="card small">目前沒有帳戶。</div>'}</div>
+  <div class="section-head" style="margin-top:22px"><div><h3 style="margin:0">🤝 待收款</h3><div class="small">代墊與借款分開管理</div></div><div class="actions"><button class="ghost" onclick="openReceivableModal('advance')">🧾 代墊</button><button class="ghost" onclick="openReceivableModal('loan')">💸 借款</button></div></div>
+  <div class="list">${receivables.map(r=>`<div class="row"><div class="row-left"><div class="row-title">${r.kind==='loan'?'💸 借款':'🧾 代墊'}｜${esc(r.person)}</div><div class="small">${esc(r.purpose||'')} · ${renderReceivableStatus(r)}</div></div><div class="actions"><b>${money(getReceivableRemaining(r))}</b><button class="ghost" onclick="openReceivableDetail('${r.id}')">查看</button></div></div>`).join('')||'<div class="card small">目前沒有代墊或借款。</div>'}</div>`;
+}
+
 
 function renderPreorders(){
   document.getElementById('main').innerHTML=`
@@ -416,16 +462,83 @@ async function saveTransaction(e){
   closeModal();await loadAll();render();
 }
 
-function openAccountModal(){
-  openModal(`<div class="modal-head"><h3>新增帳戶</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveAccount(event)"><label>名稱</label><input id="aName" class="input" required placeholder="例如 現金、AII銀行"><label>類型</label><select id="aType" class="select"><option>現金</option><option>銀行</option><option>信用卡</option><option>其他</option></select><label>初始餘額</label><input id="aBalance" class="input" type="number" value="0"><button class="primary">儲存</button></form>`);
+function openAccountModal(id){
+  const x=accounts.find(a=>a.id===id)||{};
+  openModal(`<div class="modal-head"><h3>${id?'編輯':'新增'}帳戶</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveAccount(event,'${id||''}')"><label>名稱</label><input id="aName" class="input" required placeholder="例如 現金、AII銀行" value="${esc(x.name||'')}"><label>類型</label><select id="aType" class="select"><option>現金</option><option>銀行</option><option>信用卡</option><option>其他</option></select><label>初始餘額</label><input id="aBalance" class="input" type="number" value="${x.opening_balance??0}"><label style="display:flex;gap:10px;align-items:center;color:var(--text);margin-top:16px"><input id="aInclude" type="checkbox" ${x.include_in_total===false?'':'checked'}> 計入目前總資產</label><div class="small">取消勾選後，帳戶仍會正常計算餘額，只是不會列入 Dashboard 的「目前可計入總資產」。</div><button class="primary">儲存</button></form>`);
+  if(x.type)document.getElementById('aType').value=x.type;
 }
-async function saveAccount(e){
+async function saveAccount(e,id){
   e.preventDefault();
-  const {error}=await db.from('accounts').insert({user_id:currentUser.id,name:document.getElementById('aName').value.trim(),type:document.getElementById('aType').value,opening_balance:Number(document.getElementById('aBalance').value)});
-  if(error)return alert(error.message);
+  const payload={user_id:currentUser.id,name:document.getElementById('aName').value.trim(),type:document.getElementById('aType').value,opening_balance:Number(document.getElementById('aBalance').value),include_in_total:document.getElementById('aInclude').checked};
+  const q=id?db.from('accounts').update(payload).eq('id',id):db.from('accounts').insert(payload);
+  const {error}=await q;if(error)return alert(error.message);
   closeModal();await loadAll();render();
 }
 
+
+
+function openTransferModal(){
+  if(accounts.length<2){alert('至少需要兩個帳戶才能轉帳。');setPage('accounts');return;}
+  openModal(`<div class="modal-head"><h3>🔄 帳戶轉帳</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveTransfer(event)"><div class="form-grid"><div><label>轉出帳戶</label><select id="trFrom" class="select" required>${selectAccounts()}</select></div><div><label>轉入帳戶</label><select id="trTo" class="select" required>${selectAccounts()}</select></div><div><label>轉帳金額</label><input id="trAmount" class="input" type="number" min="0.01" step="0.01" required></div><div><label>手續費</label><input id="trFee" class="input" type="number" min="0" step="0.01" value="0"></div><div><label>日期</label><input id="trDate" class="input" type="date" value="${today()}" required></div><div><label>備註</label><input id="trNote" class="input" placeholder="例如 存錢轉入"></div></div><div class="small" style="margin-top:10px">轉帳本身不算收入／支出；只有手續費會算作支出。</div><button class="primary">確認轉帳</button></form>`);
+}
+async function saveTransfer(e){
+  e.preventDefault();
+  const from=document.getElementById('trFrom').value,to=document.getElementById('trTo').value,amount=Number(document.getElementById('trAmount').value),fee=Number(document.getElementById('trFee').value||0),date=document.getElementById('trDate').value,note=document.getElementById('trNote').value.trim();
+  if(from===to)return alert('轉出與轉入帳戶不能相同。');
+  const tx=fee>0?await db.from('transactions').insert({user_id:currentUser.id,type:'expense',amount:fee,date,account_id:from,category:'銀行手續費',note:note?`帳戶轉帳｜${note}`:'帳戶轉帳手續費'}).select('id').single():{data:null,error:null};
+  if(tx.error)return alert(tx.error.message);
+  const {error}=await db.from('transfers').insert({user_id:currentUser.id,from_account_id:from,to_account_id:to,amount,fee,date,note,fee_transaction_id:tx.data?.id||null});
+  if(error){if(tx.data?.id)await db.from('transactions').delete().eq('id',tx.data.id);return alert(error.message);}
+  closeModal();await loadAll();render();
+}
+async function deleteTransfer(id){
+  if(!confirm('確定刪除這筆轉帳嗎？'))return;
+  const x=transfers.find(t=>t.id===id);if(!x)return;
+  if(x.fee_transaction_id)await db.from('transactions').delete().eq('id',x.fee_transaction_id);
+  const {error}=await db.from('transfers').delete().eq('id',id);if(error)return alert(error.message);
+  await loadAll();render();
+}
+
+function getReceivableRemaining(x){return Math.max(0,Number(x.amount||0)-Number(x.returned_amount||0));}
+function renderReceivableStatus(x){const r=getReceivableRemaining(x);return r<=0?'已收回':x.returned_amount>0?'部分收回':'待收回';}
+
+function openReceivableModal(kind='advance'){
+  if(!accounts.length){alert('請先建立一個帳戶。');setPage('accounts');return;}
+  const title=kind==='loan'?'💸 借款給朋友':'🧾 代墊款';
+  openModal(`<div class="modal-head"><h3>${title}</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveReceivable(event,'${kind}')"><div class="form-grid"><div><label>對象</label><input id="rPerson" class="input" required placeholder="例如 小明"></div><div><label>金額</label><input id="rAmount" class="input" type="number" min="0.01" step="0.01" required></div><div><label>由哪個帳戶支付</label><select id="rAccount" class="select" required>${selectAccounts()}</select></div><div><label>日期</label><input id="rDate" class="input" type="date" value="${today()}" required></div><div><label>預計收回日</label><input id="rDue" class="input" type="date"></div><div><label>${kind==='loan'?'用途':'代墊項目'}</label><input id="rPurpose" class="input" placeholder="例如 午餐、生活費"></div></div><label>備註</label><input id="rNote" class="input" placeholder="可留空"><div class="small" style="margin-top:10px">這筆錢會從帳戶餘額扣除，但不會算成支出，也不會算成收入；對方還錢時再記錄收回。</div><button class="primary">儲存</button></form>`);
+}
+async function saveReceivable(e,kind){
+  e.preventDefault();
+  const amount=Number(document.getElementById('rAmount').value),accountId=document.getElementById('rAccount').value;
+  const {error}=await db.from('receivables').insert({user_id:currentUser.id,kind,person:document.getElementById('rPerson').value.trim(),amount,returned_amount:0,account_id:accountId,date:document.getElementById('rDate').value,due_date:document.getElementById('rDue').value||null,purpose:document.getElementById('rPurpose').value.trim(),note:document.getElementById('rNote').value.trim(),status:'open'});
+  if(error)return alert(error.message);closeModal();await loadAll();render();
+}
+function openReceivableDetail(id){
+  const x=receivables.find(r=>r.id===id);if(!x)return;
+  const payments=receivablePayments.filter(p=>p.receivable_id===id);
+  const remain=getReceivableRemaining(x);
+  const title=x.kind==='loan'?'💸 借款':'🧾 代墊款';
+  openModal(`<div class="modal-head"><div><h3>${title}｜${esc(x.person)}</h3><div class="small">原始 ${money(x.amount)} · 已收回 ${money(x.returned_amount)} · 尚欠 ${money(remain)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div><div class="card" style="margin-top:14px"><div class="small">${esc(x.purpose||'')}${x.due_date?' · 預計 '+dateText(x.due_date):''}</div><div style="margin-top:8px">狀態：<span class="pill ${remain<=0?'ok':'warn'}">${renderReceivableStatus(x)}</span></div></div><div class="table-wrap" style="margin-top:14px"><table class="table"><thead><tr><th>日期</th><th>收回金額</th><th>帳戶</th><th>備註</th></tr></thead><tbody>${payments.map(p=>`<tr><td>${dateText(p.date)}</td><td>${money(p.amount)}</td><td>${esc(accounts.find(a=>a.id===p.account_id)?.name||'-')}</td><td>${esc(p.note||'')}</td></tr>`).join('')||'<tr><td colspan="4">尚未收回</td></tr>'}</tbody></table></div><div class="actions" style="margin-top:14px">${remain>0?`<button class="primary" style="width:auto;margin:0" onclick="closeModal();openReceivablePaymentModal('${id}')">💰 記錄收回</button>`:''}<button class="ghost" onclick="closeModal();deleteReceivable('${id}')">刪除</button></div>`);
+}
+function openReceivablePaymentModal(id){
+  const x=receivables.find(r=>r.id===id);if(!x)return;
+  openModal(`<div class="modal-head"><h3>💰 收回款項</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveReceivablePayment(event,'${id}')"><div class="form-grid"><div><label>收回金額</label><input id="rpAmount" class="input" type="number" min="0.01" max="${getReceivableRemaining(x)}" step="0.01" value="${getReceivableRemaining(x)}" required></div><div><label>收到哪個帳戶</label><select id="rpAccount" class="select" required>${selectAccounts()}</select></div><div><label>日期</label><input id="rpDate" class="input" type="date" value="${today()}" required></div><div><label>備註</label><input id="rpNote" class="input" placeholder="可留空"></div></div><button class="primary">確認收回</button></form>`);
+}
+async function saveReceivablePayment(e,id){
+  e.preventDefault();
+  const x=receivables.find(r=>r.id===id),amount=Number(document.getElementById('rpAmount').value);
+  if(amount<=0||amount>getReceivableRemaining(x))return alert('收回金額超過尚欠金額。');
+  const pay=await db.from('receivable_payments').insert({user_id:currentUser.id,receivable_id:id,amount,account_id:document.getElementById('rpAccount').value,date:document.getElementById('rpDate').value,note:document.getElementById('rpNote').value.trim()}).select('id').single();
+  if(pay.error)return alert(pay.error.message);
+  const next=Number(x.returned_amount||0)+amount;
+  const {error:up}=await db.from('receivables').update({returned_amount:next,status:next>=Number(x.amount)?'completed':'partial'}).eq('id',id);
+  if(up){await db.from('receivable_payments').delete().eq('id',pay.data.id);return alert(up.message);}
+  closeModal();await loadAll();render();
+}
+async function deleteReceivable(id){
+  if(!confirm('確定刪除這筆紀錄嗎？'))return;
+  const {error}=await db.from('receivables').delete().eq('id',id);if(error)return alert(error.message);await loadAll();render();
+}
 function openPreorderModal(id){
   const x=preorders.find(a=>a.id===id)||{};
   openModal(`<div class="modal-head"><h3>${id?'編輯':'新增'}預購</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="savePreorder(event,'${id||''}')"><label>商品名稱</label><input id="pName" class="input" required value="${esc(x.name||'')}"><div class="form-grid"><div><label>總價</label><input id="pTotal" class="input" type="number" min="0" required value="${x.total_amount||''}"></div><div><label>已付款</label><input id="pPaid" class="input" type="number" min="0" value="${x.paid_amount||0}"></div><div><label>平台／賣家</label><input id="pPlatform" class="input" value="${esc(x.platform||'')}"></div><div><label>預計到貨</label><input id="pDate" class="input" type="date" value="${x.expected_date||''}"></div><div><label>狀態</label><select id="pStatus" class="select"><option value="waiting">等待到貨</option><option value="partial">部分付款</option><option value="unpaid">尚未付款</option><option value="paid">已付清</option><option value="cancelled">已取消</option></select></div></div><button class="primary">儲存</button></form>`);
@@ -576,63 +689,6 @@ async function undoInstallmentPaid(id){
   await loadAll();render();
 }
 
-function openHistoricalPaymentModal(id,periodNumber){
-  const x=installments.find(a=>a.id===id);if(!x)return;
-  if(!accounts.length){alert('請先到「帳戶」新增至少一個付款帳戶。');setPage('accounts');return;}
-  const existing=getInstallmentPayments(id).find(p=>Number(p.period_number)===periodNumber);
-  if(existing){openInstallmentDetail(id);return;}
-  const dueDate=addMonths(x.start_date,periodNumber-1,x.due_day);
-  openModal(`<div class="modal-head"><div><h3>📝 補登第 ${periodNumber} 期</h3><div class="small">${esc(x.name)} · 原定 ${dateText(dueDate)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div>
-  <form onsubmit="saveHistoricalPayment(event,'${id}',${periodNumber})">
-    <div class="form-grid">
-      <div><label>實際繳費日期</label><input id="histDate" class="input" type="date" value="${dueDate||today()}" required></div>
-      <div><label>實際繳費金額</label><input id="histAmount" class="input" type="number" min="0" value="${x.period_amount}" required></div>
-      <div><label>付款帳戶</label><select id="histAccount" class="select" required>${selectAccounts()}</select></div>
-      <div><label>備註</label><input id="histNote" class="input" placeholder="例如 舊資料補登"></div>
-    </div>
-    <label>📸 繳費明細</label>
-    <input id="histReceipt" class="input" type="file" accept="image/jpeg,image/png,image/webp">
-    <div class="small">可上傳 JPG、PNG、WebP，單張最大 5 MB。這筆補登不會再次增加已繳期數。</div>
-    <button class="primary" id="histSubmit">✓ 儲存歷史明細</button>
-  </form>`);
-}
-
-async function saveHistoricalPayment(e,id,periodNumber){
-  e.preventDefault();
-  const btn=document.getElementById('histSubmit');btn.disabled=true;btn.textContent='儲存中…';
-  const x=installments.find(a=>a.id===id);if(!x)return;
-  const paymentDate=document.getElementById('histDate').value;
-  const amount=Number(document.getElementById('histAmount').value);
-  const accountId=document.getElementById('histAccount').value;
-  const note=document.getElementById('histNote').value.trim()||`${x.name}｜第${periodNumber}期｜歷史補登`;
-  const file=document.getElementById('histReceipt').files[0];
-  let receiptPath=null;
-  try{
-    if(file){
-      if(file.size>5*1024*1024)throw new Error('圖片超過 5 MB，請換一張較小的圖片。');
-      if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('只允許 JPG、PNG、WebP 圖片。');
-      const ext=file.type==='image/jpeg'?'jpg':file.type.split('/')[1];
-      receiptPath=`${currentUser.id}/${id}/${periodNumber}-history-${Date.now()}.${ext}`;
-      const up=await db.storage.from('payment-receipts').upload(receiptPath,file,{contentType:file.type,upsert:false});
-      if(up.error)throw up.error;
-    }
-    const pay=await db.from('installment_payments').insert({
-      user_id:currentUser.id,installment_id:id,period_number:periodNumber,
-      payment_date:paymentDate,amount,account_id:accountId,note,receipt_path:receiptPath
-    });
-    if(pay.error){
-      if(receiptPath)await db.storage.from('payment-receipts').remove([receiptPath]);
-      throw pay.error;
-    }
-    closeModal();await loadAll();render();
-    // 回到分期詳細資料，讓使用者立刻看到剛補上的日期／圖片
-    setTimeout(()=>openInstallmentDetail(id),50);
-  }catch(err){
-    console.error(err);alert(err.message||'歷史明細儲存失敗，請再試一次。');
-    btn.disabled=false;btn.textContent='✓ 儲存歷史明細';
-  }
-}
-
 async function viewReceipt(path){
   if(!path)return;
   const {data,error}=await db.storage.from('payment-receipts').createSignedUrl(path,300);
@@ -651,7 +707,7 @@ function openInstallmentDetail(id){
     const isPaid=!!p || n<=paid;
     const dueDate=addMonths(x.start_date,n-1,x.due_day);
     const statusHtml=p?`<span class="pill ok">✓ 已繳</span><div class="small">實際 ${dateText(p.payment_date)}</div>`:isPaid?`<span class="pill ok">✓ 已繳</span><div class="small">歷史補登</div>`:'<span class="pill warn">待繳</span>';
-    const receiptHtml=p?.receipt_path?`<button class="ghost" onclick="viewReceipt('${p.receipt_path}')">📸 查看</button>`:isPaid?`<button class="ghost" onclick="closeModal();openHistoricalPaymentModal('${id}',${n})">📝 補登明細</button>`:'-';
+    const receiptHtml=p?.receipt_path?`<button class="ghost" onclick="viewReceipt('${p.receipt_path}')">📸 查看</button>`:'-';
     rows+=`<tr><td>第 ${n} 期</td><td>${dateText(dueDate)}</td><td>${money(p?.amount??x.period_amount)}</td><td>${statusHtml}</td><td>${receiptHtml}</td></tr>`;
   }
   openModal(`<div class="modal-head"><div><h3 style="margin:0">${esc(x.name)}</h3><div class="small">${paid}/${x.total_periods} 期 · 剩餘 ${money(x.remaining_amount)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div><div class="table-wrap" style="margin-top:14px"><table class="table"><thead><tr><th>期數</th><th>預定日</th><th>金額</th><th>狀態</th><th>明細</th></tr></thead><tbody>${rows}</tbody></table></div><div class="actions" style="margin-top:14px">${paid<x.total_periods?`<button class="primary" style="width:auto;margin:0" onclick="closeModal();openPaymentModal('${id}')">💰 紀錄下一期付款</button>`:''}${paid>0?`<button class="ghost" onclick="closeModal();undoInstallmentPaid('${id}')">↩ 撤銷最後一期</button>`:''}<button class="ghost" onclick="closeModal();openInstallmentModal('${id}')">修改分期</button></div>`);
