@@ -348,8 +348,28 @@ function renderPreorders(){
 
 function renderInstallments(){
   document.getElementById('main').innerHTML=`
-  <div class="section-head"><div><div class="page-title">💳 分期管理</div><div class="page-sub">可補登已經繳過的期數，不會倒灌進本月支出</div></div><button class="primary" style="width:auto;margin:0" onclick="openInstallmentModal()">＋ 新增分期</button></div>
-  <div class="list">${installments.map(x=>`<div class="card"><div class="section-head"><div><h3 style="margin:0">${esc(x.name)}</h3><div class="small">${money(x.total_amount)} · ${x.total_periods} 期 · 每期 ${money(x.period_amount)}</div></div><span class="pill ${x.status==='active'?'warn':x.status==='completed'?'ok':'bad'}">${x.status==='active'?'進行中':x.status==='completed'?'已完成':'已取消'}</span></div><div style="display:flex;justify-content:space-between"><span>已繳 ${x.paid_periods}/${x.total_periods} 期</span><b>剩餘 ${money(x.remaining_amount)}</b></div><div class="progress"><div style="width:${pct(x.paid_periods,x.total_periods)}%"></div></div><div class="actions" style="margin-top:12px"><button class="ghost" onclick="openInstallmentDetail('${x.id}')">查看每一期</button><button class="ghost" onclick="openInstallmentModal('${x.id}')">編輯</button><button class="danger" onclick="deleteRecord('installments','${x.id}')">刪除</button></div></div>`).join('')||'<div class="card small">目前沒有分期資料。</div>'}</div>`;
+  <div class="section-head"><div><div class="page-title">💳 分期管理</div><div class="page-sub">每一期都可以單獨確認，已繳歷史不會倒灌進本月支出</div></div><button class="primary" style="width:auto;margin:0" onclick="openInstallmentModal()">＋ 新增分期</button></div>
+  <div class="list">${installments.map(x=>{
+    const paid=Number(x.paid_periods||0), total=Number(x.total_periods||0);
+    const remain=Math.max(0,Number(x.total_amount||0)-paid*Number(x.period_amount||0));
+    const nextDate=paid<total?addMonths(x.start_date,paid,x.due_day):null;
+    return `<div class="card">
+      <div class="section-head">
+        <div><h3 style="margin:0">${esc(x.name)}</h3><div class="small">${money(x.total_amount)} · ${total} 期 · 每期 ${money(x.period_amount)}</div></div>
+        <span class="pill ${x.status==='active'?'warn':x.status==='completed'?'ok':'bad'}">${x.status==='active'?'進行中':x.status==='completed'?'已完成':'已取消'}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><span>已繳 <b>${paid}/${total}</b> 期</span><span>剩餘 <b>${money(remain)}</b></span></div>
+      <div class="progress"><div style="width:${pct(paid,total)}%"></div></div>
+      ${paid<total?`<div class="small" style="margin-top:9px">下一期：第 ${paid+1} 期 · ${dateText(nextDate)} · ${money(x.period_amount)}</div>`:'<div class="small" style="margin-top:9px">🎉 這筆分期已全部繳清</div>'}
+      <div class="actions" style="margin-top:12px">
+        <button class="ghost" onclick="openInstallmentDetail('${x.id}')">查看每一期</button>
+        ${paid<total?`<button class="ghost" onclick="markInstallmentPaid('${x.id}')">✓ 繳下一期</button>`:''}
+        ${paid>0?`<button class="ghost" onclick="undoInstallmentPaid('${x.id}')">↩ 撤銷最後一期</button>`:''}
+        <button class="ghost" onclick="openInstallmentModal('${x.id}')">編輯</button>
+        <button class="danger" onclick="deleteRecord('installments','${x.id}')">刪除</button>
+      </div>
+    </div>`;
+  }).join('')||'<div class="card small">目前沒有分期資料。</div>'}</div>`;
 }
 
 function renderBills(){
@@ -419,11 +439,11 @@ async function savePreorder(e,id){
 
 function openInstallmentModal(id){
   const x=installments.find(a=>a.id===id)||{};
-  openModal(`<div class="modal-head"><h3>${id?'編輯':'新增'}分期</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveInstallment(event,'${id||''}')"><label>名稱</label><input id="iName" class="input" required value="${esc(x.name||'')}"><div class="form-grid"><div><label>總金額</label><input id="iTotal" class="input" type="number" min="0" required value="${x.total_amount||''}"></div><div><label>總期數</label><input id="iPeriods" class="input" type="number" min="1" required value="${x.total_periods||''}"></div><div><label>每期金額</label><input id="iPeriodAmount" class="input" type="number" min="0" required value="${x.period_amount||''}"></div><div><label>已繳期數（可補登）</label><input id="iPaidPeriods" class="input" type="number" min="0" required value="${x.paid_periods||0}"></div><div><label>第一期日期</label><input id="iStart" class="input" type="date" value="${x.start_date||today()}"></div><div><label>每月幾號扣款</label><input id="iDay" class="input" type="number" min="1" max="28" value="${x.due_day||5}"></div></div><p class="small">已繳期數只是歷史補登，不會自動算進今天／本月支出。</p><button class="primary">儲存</button></form>`);
+  openModal(`<div class="modal-head"><h3>${id?'編輯':'新增'}分期</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveInstallment(event,'${id||''}')"><label>名稱</label><input id="iName" class="input" required value="${esc(x.name||'')}"><div class="form-grid"><div><label>總金額</label><input id="iTotal" class="input" type="number" min="0" required value="${x.total_amount||''}"></div><div><label>總期數</label><input id="iPeriods" class="input" type="number" min="1" required value="${x.total_periods||''}"></div><div><label>每期金額</label><input id="iPeriodAmount" class="input" type="number" min="0" required value="${x.period_amount||''}"></div><div><label>已繳期數（歷史補登）</label><input id="iPaidPeriods" class="input" type="number" min="0" required value="${x.paid_periods||0}"></div><div><label>第一期日期</label><input id="iStart" class="input" type="date" value="${x.start_date||today()}"></div><div><label>每月幾號扣款</label><input id="iDay" class="input" type="number" min="1" max="28" value="${x.due_day||5}"></div></div><p class="small">💡 歷史已繳期數只代表「以前已經繳掉幾期」，不會自動產生本月支出。之後每次按「繳下一期」，只會更新這筆分期的進度。</p><button class="primary">儲存</button></form>`);
 }
 async function saveInstallment(e,id){
   e.preventDefault();
-  const total=Number(document.getElementById('iTotal').value),periods=Number(document.getElementById('iPeriods').value),paid=Math.min(periods,Number(document.getElementById('iPaidPeriods').value));
+  const total=Number(document.getElementById('iTotal').value),periods=Number(document.getElementById('iPeriods').value),paid=Math.min(periods,Math.max(0,Number(document.getElementById('iPaidPeriods').value)));
   const periodAmount=Number(document.getElementById('iPeriodAmount').value);
   const payload={user_id:currentUser.id,name:document.getElementById('iName').value.trim(),total_amount:total,total_periods:periods,period_amount:periodAmount,paid_periods:paid,remaining_amount:Math.max(0,total-paid*periodAmount),start_date:document.getElementById('iStart').value||null,due_day:Number(document.getElementById('iDay').value),status:paid>=periods?'completed':'active'};
   const q=id?db.from('installments').update(payload).eq('id',id):db.from('installments').insert(payload);
@@ -436,14 +456,47 @@ function addMonths(base,n,day){
   d.setDate(Math.min(day||d.getDate(),28));
   return d.toISOString().slice(0,10);
 }
+
+async function markInstallmentPaid(id){
+  const x=installments.find(a=>a.id===id);if(!x)return;
+  const paid=Number(x.paid_periods||0),total=Number(x.total_periods||0);
+  if(paid>=total)return;
+  if(!confirm(`確定標記第 ${paid+1} 期已繳嗎？\n金額：${money(x.period_amount)}\n\n這個動作只更新分期進度，不會自動新增記帳。`))return;
+  const nextPaid=paid+1;
+  const {error}=await db.from('installments').update({
+    paid_periods:nextPaid,
+    remaining_amount:Math.max(0,Number(x.total_amount)-nextPaid*Number(x.period_amount)),
+    status:nextPaid>=total?'completed':'active'
+  }).eq('id',id);
+  if(error)return alert(error.message);
+  await loadAll();render();
+}
+
+async function undoInstallmentPaid(id){
+  const x=installments.find(a=>a.id===id);if(!x)return;
+  const paid=Number(x.paid_periods||0);
+  if(paid<=0)return;
+  if(!confirm(`確定把第 ${paid} 期改回「待繳」嗎？`))return;
+  const nextPaid=paid-1;
+  const {error}=await db.from('installments').update({
+    paid_periods:nextPaid,
+    remaining_amount:Math.max(0,Number(x.total_amount)-nextPaid*Number(x.period_amount)),
+    status:'active'
+  }).eq('id',id);
+  if(error)return alert(error.message);
+  await loadAll();render();
+}
+
 function openInstallmentDetail(id){
   const x=installments.find(a=>a.id===id);if(!x)return;
+  const paid=Number(x.paid_periods||0);
   let rows='';
   for(let n=1;n<=x.total_periods;n++){
-    const paid=n<=x.paid_periods;
-    rows+=`<tr><td>第 ${n} 期</td><td>${dateText(addMonths(x.start_date,n-1,x.due_day))}</td><td>${money(x.period_amount)}</td><td><span class="pill ${paid?'ok':'warn'}">${paid?'已繳':'待繳'}</span></td></tr>`;
+    const isPaid=n<=paid;
+    const dueDate=addMonths(x.start_date,n-1,x.due_day);
+    rows+=`<tr><td>第 ${n} 期</td><td>${dateText(dueDate)}</td><td>${money(x.period_amount)}</td><td><span class="pill ${isPaid?'ok':'warn'}">${isPaid?'✓ 已繳':'待繳'}</span></td></tr>`;
   }
-  openModal(`<div class="modal-head"><h3>${esc(x.name)} · 每期紀錄</h3><button class="ghost" onclick="closeModal()">關閉</button></div><div class="table-wrap"><table class="table"><thead><tr><th>期數</th><th>日期</th><th>金額</th><th>狀態</th></tr></thead><tbody>${rows}</tbody></table></div><button class="primary" onclick="closeModal();openInstallmentModal('${id}')">修改已繳期數</button>`);
+  openModal(`<div class="modal-head"><div><h3 style="margin:0">${esc(x.name)}</h3><div class="small">${paid}/${x.total_periods} 期 · 剩餘 ${money(x.remaining_amount)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div><div class="table-wrap" style="margin-top:14px"><table class="table"><thead><tr><th>期數</th><th>預定日</th><th>金額</th><th>狀態</th></tr></thead><tbody>${rows}</tbody></table></div><div class="actions" style="margin-top:14px"><button class="ghost" onclick="closeModal();markInstallmentPaid('${id}')">✓ 繳下一期</button><button class="ghost" onclick="closeModal();openInstallmentModal('${id}')">修改分期</button></div>`);
 }
 
 function openBillModal(){
