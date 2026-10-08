@@ -30,7 +30,6 @@ main{padding:24px;min-width:0}.page-title{font-size:25px;font-weight:800;margin:
 .fab{position:fixed;right:18px;bottom:82px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:white;font-size:25px;box-shadow:0 10px 25px #0002;z-index:12}.mobile-nav{display:none}.more-sheet{position:fixed;inset:0;background:#3f393455;z-index:30;display:flex;align-items:flex-end}.more-panel{width:100%;background:var(--card);border-radius:24px 24px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -10px 30px #0002}.more-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.more-item{background:#f4eee8;color:var(--text);border-radius:14px;padding:13px;text-align:left}.more-close{width:100%;margin-top:12px;background:#eee7df;color:var(--text);padding:12px;border-radius:13px}
 @media(max-width:850px){.layout{display:block}.sidebar{display:none}main{padding:18px 14px 96px}.cards{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.mobile-nav{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;bottom:0;left:0;right:0;background:#fffdf9ef;backdrop-filter:blur(12px);border-top:1px solid var(--line);z-index:11;padding:6px 3px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 18px #00000008}.mobile-nav button{background:transparent;color:var(--muted);font-size:11px;line-height:1.25;padding:5px 2px;min-width:0}.mobile-nav button.active{color:var(--text);font-weight:700}.topbar{padding:12px 14px}.user{display:none}}
 @media(max-width:520px){.metric{font-size:20px}.form-grid{grid-template-columns:1fr}.fab{right:16px;bottom:78px}}
-.form-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -1187,7 +1186,8 @@ function moreGo(page){
   closeMoreSheet();
   setPage(page);
 }
-\nfunction quickAdd(){
+
+function quickAdd(){
   if(window.matchMedia && window.matchMedia('(max-width:850px)').matches){
     openModal(`<div class="modal-head"><div><h3>＋ 新增</h3><div class="small">選擇你要新增的項目</div></div><button class="ghost" onclick="closeModal()">關閉</button></div>
       <div class="more-grid" style="margin-top:14px">
