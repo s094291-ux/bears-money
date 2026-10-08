@@ -71,6 +71,9 @@ main{padding:24px;min-width:0}.page-title{font-size:25px;font-weight:800;margin:
 <button class="navbtn" data-page="search">🔎 查詢</button>
 <button class="navbtn" data-page="common">👥 共同費用</button>
 <button class="navbtn" data-page="store">🛍️ 賣場／預收款</button>
+<button class="navbtn" data-page="borrowed">💸 借入款</button>
+<button class="navbtn" data-page="budget">💰 預算分配</button>
+<button class="navbtn" data-page="categories">🏷️ 分類管理</button>
 <button class="navbtn" data-page="preorders">🛍️ 預購／待付款</button>
 <button class="navbtn" data-page="installments">💳 分期管理</button>
 <button class="navbtn" data-page="bills">🧾 固定繳費</button>
@@ -87,6 +90,9 @@ main{padding:24px;min-width:0}.page-title{font-size:25px;font-weight:800;margin:
 <button data-page="search">🔎<br>查詢</button>
 <button data-page="common">👥<br>共同</button>
 <button data-page="store">🛍️<br>賣場</button>
+<button data-page="borrowed">💸<br>借入</button>
+<button data-page="budget">💰<br>預算</button>
+<button data-page="categories">🏷️<br>分類</button>
 </div>
 <button class="fab" onclick="quickAdd()">＋</button>
 </div>
@@ -109,6 +115,7 @@ let currentMonth=new Date().toISOString().slice(0,7);
 let accounts=[],transactions=[],preorders=[],installments=[],installmentPayments=[],bills=[],goals=[],transfers=[],receivables=[],receivablePayments=[];
 let commonExpenses=[],commonExpenseMembers=[],commonExpensePayments=[],commonExpenseCharges=[];
 let storePrepayments=[],storePrepaymentUsages=[],storePrepaymentRefunds=[];
+let borrowedFunds=[],borrowedRepayments=[],categories=[],budgets=[];
 
 const money=n=>new Intl.NumberFormat('zh-TW',{style:'currency',currency:'TWD',maximumFractionDigits:0}).format(Number(n)||0);
 const dateText=d=>d?new Date(d+'T00:00:00').toLocaleDateString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
@@ -224,7 +231,7 @@ async function logout(){
    DATA
    ========================= */
 async function loadAll(){
-  const tables=[['accounts','accounts'],['transactions','transactions'],['preorders','preorders'],['installments','installments'],['installment_payments','installmentPayments'],['transfers','transfers'],['receivables','receivables'],['receivable_payments','receivablePayments'],['bills','bills'],['goals','goals'],['common_expenses','commonExpenses'],['common_expense_members','commonExpenseMembers'],['common_expense_payments','commonExpensePayments'],['common_expense_charges','commonExpenseCharges'],['store_prepayments','storePrepayments'],['store_prepayment_usages','storePrepaymentUsages'],['store_prepayment_refunds','storePrepaymentRefunds']];
+  const tables=[['accounts','accounts'],['transactions','transactions'],['preorders','preorders'],['installments','installments'],['installment_payments','installmentPayments'],['transfers','transfers'],['receivables','receivables'],['receivable_payments','receivablePayments'],['bills','bills'],['goals','goals'],['common_expenses','commonExpenses'],['common_expense_members','commonExpenseMembers'],['common_expense_payments','commonExpensePayments'],['common_expense_charges','commonExpenseCharges'],['store_prepayments','storePrepayments'],['store_prepayment_usages','storePrepaymentUsages'],['store_prepayment_refunds','storePrepaymentRefunds'],['borrowed_funds','borrowedFunds'],['borrowed_repayments','borrowedRepayments'],['categories','categories'],['budgets','budgets']];
   for(const [table,key] of tables){
     const {data,error}=await db.from(table).select('*').order('created_at',{ascending:false});
     if(error){
@@ -251,6 +258,10 @@ async function loadAll(){
   storePrepayments=window.storePrepayments||[];
   storePrepaymentUsages=window.storePrepaymentUsages||[];
   storePrepaymentRefunds=window.storePrepaymentRefunds||[];
+  borrowedFunds=window.borrowedFunds||[];
+  borrowedRepayments=window.borrowedRepayments||[];
+  categories=window.categories||[];
+  budgets=window.budgets||[];
 }
 
 /* =========================
@@ -268,7 +279,7 @@ document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',(
    ========================= */
 function render(){
   const m=document.getElementById('main');
-  ({dashboard:renderDashboard,transactions:renderTransactions,accounts:renderAccounts,search:renderSearch,common:renderCommonExpenses,store:renderStore,preorders:renderPreorders,installments:renderInstallments,bills:renderBills,goals:renderGoals}[currentPage]||renderDashboard)();
+  ({dashboard:renderDashboard,transactions:renderTransactions,accounts:renderAccounts,search:renderSearch,common:renderCommonExpenses,store:renderStore,borrowed:renderBorrowed,budget:renderBudget,categories:renderCategories,preorders:renderPreorders,installments:renderInstallments,bills:renderBills,goals:renderGoals}[currentPage]||renderDashboard)();
 }
 
 function monthLabel(key){
@@ -308,12 +319,20 @@ function accountBalance(a){
   const commonIn=commonExpensePayments.filter(p=>p.account_id===a.id).reduce((s,p)=>s+Number(p.amount||0),0);
   const storeIn=storePrepayments.filter(p=>p.account_id===a.id).reduce((s,p)=>s+Number(p.amount||0),0);
   const storeRefund=storePrepaymentRefunds.filter(p=>p.account_id===a.id).reduce((s,p)=>s-Number(p.amount||0),0);
-  return Number(a.opening_balance||0)+tx+trOut+trIn+recOut+recIn+commonIn+storeIn+storeRefund;
+  const borrowedIn=borrowedFunds.filter(p=>p.account_id===a.id).reduce((s,p)=>s+Number(p.amount||0),0);
+  const borrowedOut=borrowedRepayments.filter(p=>p.account_id===a.id).reduce((s,p)=>s-Number(p.amount||0),0);
+  return Number(a.opening_balance||0)+tx+trOut+trIn+recOut+recIn+commonIn+storeIn+storeRefund+borrowedIn+borrowedOut;
 }
 
-function includedAssets(){
-  return accounts.filter(a=>a.include_in_total!==false).reduce((s,a)=>s+accountBalance(a),0);
+function borrowedRemaining(x){
+  return Math.max(0,Number(x.amount||0)-borrowedRepayments.filter(r=>r.borrowed_fund_id===x.id).reduce((s,r)=>s+Number(r.amount||0),0));
 }
+function includedAssets(){
+  const base=accounts.filter(a=>a.include_in_total!==false).reduce((s,a)=>s+accountBalance(a),0);
+  return base-borrowedFunds.filter(x=>x.include_in_assets===false).reduce((s,x)=>s+borrowedRemaining(x),0);
+}
+function borrowedTotalOutstanding(){return borrowedFunds.reduce((s,x)=>s+borrowedRemaining(x),0);}
+
 
 function excludedAssets(){
   return accounts.filter(a=>a.include_in_total===false).reduce((s,a)=>s+accountBalance(a),0);
@@ -425,7 +444,7 @@ function renderStore(){
             <b>${money(remain)}</b>
             ${remain>0?`<button class="ghost" onclick="openStoreUsageModal('${x.id}')">📦 套用</button>`:''}
             ${remain>0?`<button class="ghost" onclick="openStoreRefundModal('${x.id}')">↩ 退款</button>`:''}
-            <button class="ghost" onclick="openStorePrepaymentModal('${x.id}')">✏️ 編輯</button>
+            <button class="ghost" onclick="openStorePrepaymentDetail('${x.id}')">📋 明細</button><button class="ghost" onclick="openStorePrepaymentModal('${x.id}')">✏️ 編輯</button>
             <button class="danger" onclick="deleteStorePrepayment('${x.id}')">🗑️</button>
           </div>
         </div>`;
@@ -478,69 +497,58 @@ async function saveStorePrepayment(e,id){
   closeModal();await loadAll();render();
 }
 
-function openStoreUsageModal(id){
+function openStorePrepaymentDetail(id){
   const x=storePrepayments.find(a=>a.id===id);if(!x)return;
-  const remain=storeRemaining(x);
-  if(remain<=0)return alert('這筆預收款已沒有可使用餘額。');
-  openModal(`<div class="modal-head"><div><h3>📦 套用預收款</h3><div class="small">${esc(x.customer_name)} · 尚可使用 ${money(remain)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div>
-  <form onsubmit="saveStoreUsage(event,'${id}')">
-    <div class="form-grid">
-      <div><label>本次套用金額</label><input id="suAmount" class="input" type="number" min="0.01" max="${remain}" step="0.01" value="${remain}" required></div>
-      <div><label>使用日期</label><input id="suDate" class="input" type="date" value="${today()}" required></div>
-      <div><label>訂單編號</label><input id="suOrder" class="input" placeholder="例如 LUB20261006001" value="${esc(x.order_ref||'')}"></div>
-    </div>
-    <div class="small" style="margin-top:10px">這一步<strong>不會再次增加或扣除帳戶餘額</strong>，因為客人早已付款。它只會把這筆錢從「客人預收款」轉成「已使用」。</div>
-    <label>備註</label><input id="suNote" class="input" placeholder="例如 本次訂單尾款" >
-    <button class="primary">確認套用</button>
-  </form>`);
+  const usages=storePrepaymentUsages.filter(u=>u.prepayment_id===id);
+  const refunds=storePrepaymentRefunds.filter(r=>r.prepayment_id===id);
+  openModal(`<div class="modal-head"><div><h3>📋 ${esc(x.customer_name)}｜預收款明細</h3><div class="small">原收 ${money(x.amount)} · 尚餘 ${money(storeRemaining(x))}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div>
+  <h4>📦 已套用</h4><div class="list">${usages.map(u=>`<div class="row"><div><b>${money(u.amount)}</b><div class="small">${dateText(u.usage_date)}${u.order_ref?' · '+esc(u.order_ref):''}</div></div><div class="actions"><button class="ghost" onclick="openStoreUsageModal('${id}','${u.id}')">✏️</button><button class="danger" onclick="deleteStoreUsage('${u.id}','${id}')">🗑️</button></div></div>`).join('')||'<div class="small">尚未套用。</div>'}</div>
+  <h4>↩ 已退款</h4><div class="list">${refunds.map(r=>`<div class="row"><div><b>${money(r.amount)}</b><div class="small">${dateText(r.refund_date)}</div></div><div class="actions"><button class="ghost" onclick="openStoreRefundModal('${id}','${r.id}')">✏️</button><button class="danger" onclick="deleteStoreRefund('${r.id}','${id}')">🗑️</button></div></div>`).join('')||'<div class="small">尚未退款。</div>'}</div>`);
+}
+function openStoreUsageModal(id,usageId=''){
+  const x=storePrepayments.find(a=>a.id===id);if(!x)return;
+  const u=storePrepaymentUsages.find(a=>a.id===usageId)||{},editing=!!usageId;
+  const current=editing?Number(u.amount||0):0,remain=storeRemaining(x)+current;
+  if(!editing&&storeRemaining(x)<=0)return alert('這筆預收款已沒有可使用餘額。');
+  openModal(`<div class="modal-head"><h3>📦 ${editing?'編輯':'套用'}預收款</h3><button class="ghost" onclick="closeModal()">關閉</button></div>
+  <form onsubmit="saveStoreUsage(event,'${id}','${usageId}')"><label>套用金額</label><input id="suAmount" class="input" type="number" min="0.01" max="${remain}" step="0.01" value="${u.amount??storeRemaining(x)}" required><label>使用日期</label><input id="suDate" class="input" type="date" value="${u.usage_date||today()}" required><label>訂單編號</label><input id="suOrder" class="input" value="${esc(u.order_ref||x.order_ref||'')}"><label>備註</label><input id="suNote" class="input" value="${esc(u.note||'')}">${editing?`<button type="button" class="danger" style="margin-top:12px" onclick="deleteStoreUsage('${usageId}','${id}')">🗑️ 刪除</button>`:''}<button class="primary">${editing?'儲存修改':'確認套用'}</button></form>`);
+}
+async function saveStoreUsage(e,id,usageId=''){
+  e.preventDefault();const x=storePrepayments.find(a=>a.id===id);if(!x)return;
+  const amount=Number(document.getElementById('suAmount').value),current=usageId?Number(storePrepaymentUsages.find(u=>u.id===usageId)?.amount||0):0;
+  if(amount<=0||amount>storeRemaining(x)+current)return alert('套用金額超過目前可用預收款。');
+  const payload={user_id:currentUser.id,prepayment_id:id,amount,usage_date:document.getElementById('suDate').value,order_ref:document.getElementById('suOrder').value.trim(),note:document.getElementById('suNote').value.trim()};
+  const {error}=await (usageId?db.from('store_prepayment_usages').update(payload).eq('id',usageId):db.from('store_prepayment_usages').insert(payload));
+  if(error)return alert(error.message);closeModal();await loadAll();openStorePrepaymentDetail(id);
+}
+async function deleteStoreUsage(uid,pid){
+  if(!confirm('確定刪除這筆套用紀錄？'))return;
+  const {error}=await db.from('store_prepayment_usages').delete().eq('id',uid);if(error)return alert(error.message);
+  closeModal();await loadAll();openStorePrepaymentDetail(pid);
 }
 
-async function saveStoreUsage(e,id){
-  e.preventDefault();
+function openStoreRefundModal(id,refundId=''){
   const x=storePrepayments.find(a=>a.id===id);if(!x)return;
-  const amount=Number(document.getElementById('suAmount').value),remain=storeRemaining(x);
-  if(amount<=0||amount>remain)return alert('套用金額超過目前可用預收款。');
-  const {error}=await db.from('store_prepayment_usages').insert({
-    user_id:currentUser.id,prepayment_id:id,amount,
-    usage_date:document.getElementById('suDate').value,
-    order_ref:document.getElementById('suOrder').value.trim(),
-    note:document.getElementById('suNote').value.trim()
-  });
-  if(error)return alert(error.message);
-  closeModal();await loadAll();render();
-}
-
-function openStoreRefundModal(id){
-  const x=storePrepayments.find(a=>a.id===id);if(!x)return;
-  const remain=storeRemaining(x);
-  if(remain<=0)return alert('這筆預收款已沒有可退款餘額。');
+  const r=storePrepaymentRefunds.find(a=>a.id===refundId)||{},editing=!!refundId;
+  const current=editing?Number(r.amount||0):0,remain=storeRemaining(x)+current;
+  if(!editing&&storeRemaining(x)<=0)return alert('這筆預收款已沒有可退款餘額。');
   if(!accounts.length){alert('請先建立退款帳戶。');setPage('accounts');return;}
-  openModal(`<div class="modal-head"><div><h3>↩ 退還客人預收款</h3><div class="small">${esc(x.customer_name)} · 可退 ${money(remain)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div>
-  <form onsubmit="saveStoreRefund(event,'${id}')">
-    <div class="form-grid">
-      <div><label>退款金額</label><input id="srAmount" class="input" type="number" min="0.01" max="${remain}" step="0.01" value="${remain}" required></div>
-      <div><label>退款日期</label><input id="srDate" class="input" type="date" value="${today()}" required></div>
-      <div><label>退款帳戶</label><select id="srAccount" class="select" required>${selectAccounts()}</select></div>
-    </div>
-    <label>備註</label><input id="srNote" class="input" placeholder="例如 客人取消訂單退款">
-    <div class="small" style="margin-top:10px">退款會從指定帳戶扣回，但<strong>不會算成一般支出</strong>，因為它只是把原本的客人預收款退回去。</div>
-    <button class="primary">確認退款</button>
-  </form>`);
+  openModal(`<div class="modal-head"><h3>↩ ${editing?'編輯':'退還'}預收款</h3><button class="ghost" onclick="closeModal()">關閉</button></div>
+  <form onsubmit="saveStoreRefund(event,'${id}','${refundId}')"><label>退款金額</label><input id="srAmount" class="input" type="number" min="0.01" max="${remain}" step="0.01" value="${r.amount??remain}" required><label>退款日期</label><input id="srDate" class="input" type="date" value="${r.refund_date||today()}" required><label>退款帳戶</label><select id="srAccount" class="select" required>${selectAccounts()}</select><label>備註</label><input id="srNote" class="input" value="${esc(r.note||'')}">${editing?`<button type="button" class="danger" style="margin-top:12px" onclick="deleteStoreRefund('${refundId}','${id}')">🗑️ 刪除</button>`:''}<button class="primary">${editing?'儲存修改':'確認退款'}</button></form>`);
+  if(r.account_id)document.getElementById('srAccount').value=r.account_id;
 }
-
-async function saveStoreRefund(e,id){
-  e.preventDefault();
-  const x=storePrepayments.find(a=>a.id===id);if(!x)return;
-  const amount=Number(document.getElementById('srAmount').value),remain=storeRemaining(x);
-  if(amount<=0||amount>remain)return alert('退款金額超過目前可退餘額。');
-  const {error}=await db.from('store_prepayment_refunds').insert({
-    user_id:currentUser.id,prepayment_id:id,amount,
-    refund_date:document.getElementById('srDate').value,
-    account_id:document.getElementById('srAccount').value,
-    note:document.getElementById('srNote').value.trim()
-  });
-  if(error)return alert(error.message);
-  closeModal();await loadAll();render();
+async function saveStoreRefund(e,id,refundId=''){
+  e.preventDefault();const x=storePrepayments.find(a=>a.id===id);if(!x)return;
+  const amount=Number(document.getElementById('srAmount').value),current=refundId?Number(storePrepaymentRefunds.find(r=>r.id===refundId)?.amount||0):0;
+  if(amount<=0||amount>storeRemaining(x)+current)return alert('退款金額超過目前可退餘額。');
+  const payload={user_id:currentUser.id,prepayment_id:id,amount,refund_date:document.getElementById('srDate').value,account_id:document.getElementById('srAccount').value,note:document.getElementById('srNote').value.trim()};
+  const {error}=await (refundId?db.from('store_prepayment_refunds').update(payload).eq('id',refundId):db.from('store_prepayment_refunds').insert(payload));
+  if(error)return alert(error.message);closeModal();await loadAll();openStorePrepaymentDetail(id);
+}
+async function deleteStoreRefund(rid,pid){
+  if(!confirm('確定刪除這筆退款？'))return;
+  const {error}=await db.from('store_prepayment_refunds').delete().eq('id',rid);if(error)return alert(error.message);
+  closeModal();await loadAll();openStorePrepaymentDetail(pid);
 }
 
 async function deleteStorePrepayment(id){
@@ -706,7 +714,7 @@ function renderTransactions(){
     ...transactions.filter(t=>t.date>=start&&t.date<=end).map(t=>({kind:'tx',date:t.date,created_at:t.created_at,data:t})),
     ...transfers.filter(t=>t.date>=start&&t.date<=end).map(t=>({kind:'transfer',date:t.date,created_at:t.created_at,data:t}))
   ].sort((a,b)=>new Date((b.date||'')+'T00:00:00')-new Date((a.date||'')+'T00:00:00'));
-  document.getElementById('main').innerHTML=`<div class="section-head"><div><div class="page-title">🧾 記帳</div><div class="page-sub">查看指定月份的收入、支出與帳戶轉帳</div></div><button class="primary" style="width:auto;margin:0" onclick="openTransactionModal()">＋ 新增</button></div>${monthPicker()}<div class="actions" style="margin-bottom:14px"><button class="ghost" onclick="openTransferModal()">🔄 帳戶轉帳</button><button class="ghost" onclick="openReceivableModal('advance')">🧾 新增代墊</button><button class="ghost" onclick="openReceivableModal('loan')">💸 新增借款</button></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>日期</th><th>類型</th><th>分類</th><th>帳戶</th><th>金額</th><th>備註</th><th></th></tr></thead><tbody>${rows.map(row=>row.kind==='transfer'?transferRow(row.data):`<tr><td>${dateText(row.data.date)}</td><td>${row.data.type==='income'?'收入':'支出'}</td><td>${esc(row.data.category||'-')}</td><td>${esc(accounts.find(a=>a.id===row.data.account_id)?.name||'-')}</td><td class="${row.data.type==='income'?'income':'expense'}">${row.data.type==='income'?'+':'-'}${money(row.data.amount)}</td><td>${esc(row.data.note||'')}</td><td><button class="danger" onclick="deleteRecord('transactions','${row.data.id}')">刪除</button></td></tr>`).join('')||`<tr><td colspan="7">${monthLabel(currentMonth)}沒有紀錄</td></tr>`}</tbody></table></div></div>`;
+  document.getElementById('main').innerHTML=`<div class="section-head"><div><div class="page-title">🧾 記帳</div><div class="page-sub">查看指定月份的收入、支出與帳戶轉帳</div></div><button class="primary" style="width:auto;margin:0" onclick="openTransactionModal()">＋ 新增</button></div>${monthPicker()}<div class="actions" style="margin-bottom:14px"><button class="ghost" onclick="openTransferModal()">🔄 帳戶轉帳</button><button class="ghost" onclick="openReceivableModal('advance')">🧾 新增代墊</button><button class="ghost" onclick="openReceivableModal('loan')">💸 新增借款</button></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>日期</th><th>類型</th><th>分類</th><th>帳戶</th><th>金額</th><th>備註</th><th></th></tr></thead><tbody>${rows.map(row=>row.kind==='transfer'?transferRow(row.data):`<tr><td>${dateText(row.data.date)}</td><td>${row.data.type==='income'?'收入':'支出'}</td><td>${esc(row.data.category||'-')}</td><td>${esc(accounts.find(a=>a.id===row.data.account_id)?.name||'-')}</td><td class="${row.data.type==='income'?'income':'expense'}">${row.data.type==='income'?'+':'-'}${money(row.data.amount)}</td><td>${esc(row.data.note||'')}</td><td><div class="actions"><button class="ghost" onclick="openTransactionModal('${row.data.id}')">編輯</button><button class="danger" onclick="deleteRecord('transactions','${row.data.id}')">刪除</button></div></td></tr>`).join('')||`<tr><td colspan="7">${monthLabel(currentMonth)}沒有紀錄</td></tr>`}</tbody></table></div></div>`;
 }
 
 function transferRow(t){
@@ -782,27 +790,43 @@ function openModal(html){document.getElementById('modalCard').innerHTML=html;doc
 function closeModal(){document.getElementById('modal').classList.add('hidden')}
 function selectAccounts(){return accounts.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}
 
-function openTransactionModal(){
-  if(!accounts.length){
-    alert('請先到「帳戶」新增至少一個帳戶，再開始記帳。');
-    setPage('accounts');
-    return;
-  }
-  openModal(`<div class="modal-head"><h3>新增記帳</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveTransaction(event)"><div class="form-grid"><div><label>類型</label><select id="tType" class="select"><option value="expense">支出</option><option value="income">收入</option></select></div><div><label>金額</label><input id="tAmount" class="input" type="number" min="0" required></div><div><label>日期</label><input id="tDate" class="input" type="date" value="${today()}" required></div><div><label>帳戶</label><select id="tAccount" class="select" required>${selectAccounts()}</select></div><div><label>分類</label><input id="tCategory" class="input" placeholder="例如 飲食、薪資"></div><div><label>備註</label><input id="tNote" class="input" placeholder="可留空"></div></div><button class="primary">儲存</button></form>`);
+function categoryOptions(selected=''){
+  const list=(categories||[]).filter(x=>x.active!==false).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+  return `<option value="">請選擇分類</option>${list.map(c=>`<option value="${esc(c.name)}" ${c.name===selected?'selected':''}>${esc(c.name)}</option>`).join('')}`;
 }
+function categorySpend(name,key=currentMonth){const {start,end}=monthRange(key);return transactions.filter(t=>t.type==='expense'&&t.date>=start&&t.date<=end&&t.category===name).reduce((s,t)=>s+Number(t.amount||0),0)}
+function budgetAmount(categoryId,key=currentMonth){const x=budgets.find(b=>b.category_id===categoryId&&b.month===key);return Number(x?.amount||0)}
+function renderCategories(){
+ const list=[...(categories||[])].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+ document.getElementById('main').innerHTML=`<div class="section-head"><div><div class="page-title">🏷️ 分類管理</div><div class="page-sub">分類可新增、編輯、停用；停用不會影響歷史記帳。</div></div><button class="primary" style="width:auto;margin:0" onclick="openCategoryModal()">＋ 新增分類</button></div><div class="list">${list.map(c=>`<div class="row"><div><div class="row-title">${esc(c.icon||'🏷️')} ${esc(c.name)}</div><div class="small">${c.active===false?'已停用':'使用中'}</div></div><div class="actions"><button class="ghost" onclick="openCategoryModal('${c.id}')">編輯</button><button class="${c.active===false?'ghost':'danger'}" onclick="toggleCategory('${c.id}',${c.active===false})">${c.active===false?'啟用':'停用'}</button></div></div>`).join('')}</div>`;
+}
+function openCategoryModal(id=''){const x=categories.find(c=>c.id===id)||{};openModal(`<div class="modal-head"><h3>${id?'編輯':'新增'}分類</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveCategory(event,'${id}')"><label>分類名稱</label><input id="cName" class="input" required value="${esc(x.name||'')}"><label>圖示</label><input id="cIcon" class="input" value="${esc(x.icon||'🏷️')}" maxlength="4"><button class="primary">儲存</button></form>`)}
+async function saveCategory(e,id){e.preventDefault();const name=document.getElementById('cName').value.trim(),icon=document.getElementById('cIcon').value.trim()||'🏷️';if(categories.some(c=>c.name===name&&c.id!==id&&c.active!==false))return alert('已有相同分類名稱。');const payload={user_id:currentUser.id,name,icon,active:true};const q=id?db.from('categories').update(payload).eq('id',id):db.from('categories').insert(payload);const {error}=await q;if(error)return alert(error.message);closeModal();await loadAll();render()}
+async function toggleCategory(id,active){const {error}=await db.from('categories').update({active}).eq('id',id);if(error)return alert(error.message);await loadAll();render()}
+function renderBudget(){const list=(categories||[]).filter(c=>c.active!==false).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));const income=monthStats().income,totalBudget=list.reduce((s,c)=>s+budgetAmount(c.id),0),spent=list.reduce((s,c)=>s+categorySpend(c.name),0);document.getElementById('main').innerHTML=`<div class="page-title">💰 預算分配表</div><div class="page-sub">${monthLabel(currentMonth)}｜設定每個分類本月可以花多少。</div>${monthPicker()}<div class="cards"><div class="card"><div class="metric-label">本月收入</div><div class="metric green">${money(income)}</div></div><div class="card"><div class="metric-label">已分配預算</div><div class="metric">${money(totalBudget)}</div></div><div class="card"><div class="metric-label">尚未分配</div><div class="metric ${income-totalBudget<0?'red':''}">${money(income-totalBudget)}</div></div><div class="card"><div class="metric-label">已使用</div><div class="metric red">${money(spent)}</div></div></div><div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>分類</th><th>預算</th><th>已使用</th><th>剩餘</th><th>使用率</th><th></th></tr></thead><tbody>${list.map(c=>{const b=budgetAmount(c.id),u=categorySpend(c.name),r=b-u,p=b?Math.round(u/b*100):0;return `<tr><td>${esc(c.icon||'🏷️')} ${esc(c.name)}</td><td>${money(b)}</td><td>${money(u)}</td><td class="${r<0?'expense':''}">${r<0?'超支 ':''}${money(Math.abs(r))}</td><td>${b?Math.round(u/b*100)+'%':'—'}</td><td><button class="ghost" onclick="openBudgetModal('${c.id}')">設定</button></td></tr>`}).join('')}</tbody></table></div></div>`}
+function openBudgetModal(categoryId){const c=categories.find(x=>x.id===categoryId);if(!c)return;const b=budgetAmount(categoryId);openModal(`<div class="modal-head"><h3>💰 ${esc(c.name)}｜${monthLabel(currentMonth)}</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveBudget(event,'${categoryId}')"><label>本月預算</label><input id="bAmount" class="input" type="number" min="0" step="1" value="${b}"><button class="primary">儲存</button></form>`)}
+async function saveBudget(e,categoryId){e.preventDefault();const amount=Number(document.getElementById('bAmount').value||0),x=budgets.find(b=>b.category_id===categoryId&&b.month===currentMonth);let q=x?(amount>0?db.from('budgets').update({amount}).eq('id',x.id):db.from('budgets').delete().eq('id',x.id)):(amount>0?db.from('budgets').insert({user_id:currentUser.id,category_id:categoryId,month:currentMonth,amount}):{error:null});if(q.error)return alert(q.error.message);const {error}=await q;if(error)return alert(error.message);closeModal();await loadAll();render()}
 
-async function saveTransaction(e){
+function openTransactionModal(id=''){
+  if(!accounts.length){alert('請先到「帳戶」新增至少一個帳戶，再開始記帳。');setPage('accounts');return;}
+  const x=transactions.find(t=>t.id===id)||{},editing=!!id;
+  openModal(`<div class="modal-head"><h3>${editing?'✏️ 編輯記帳':'新增記帳'}</h3><button class="ghost" onclick="closeModal()">關閉</button></div>
+  <form onsubmit="saveTransaction(event,'${id}')"><div class="form-grid">
+  <div><label>類型</label><select id="tType" class="select"><option value="expense">支出</option><option value="income">收入</option></select></div>
+  <div><label>金額</label><input id="tAmount" class="input" type="number" min="0" step="0.01" required value="${x.amount??''}"></div>
+  <div><label>日期</label><input id="tDate" class="input" type="date" value="${x.date||today()}" required></div>
+  <div><label>帳戶</label><select id="tAccount" class="select" required>${selectAccounts()}</select></div>
+  <div><label>分類</label><select id="tCategory" class="select" required>${categoryOptions(x.category||"")}</select></div>
+  <div><label>備註</label><input id="tNote" class="input" placeholder="可留空" value="${esc(x.note||'')}"></div></div>
+  <button class="primary">${editing?'儲存修改':'儲存'}</button></form>`);
+  if(x.type)document.getElementById('tType').value=x.type;
+  if(x.account_id)document.getElementById('tAccount').value=x.account_id;
+}
+async function saveTransaction(e,id=''){
   e.preventDefault();
-  const {error}=await db.from('transactions').insert({
-    user_id:currentUser.id,
-    type:document.getElementById('tType').value,
-    amount:Number(document.getElementById('tAmount').value),
-    date:document.getElementById('tDate').value,
-    account_id:document.getElementById('tAccount').value,
-    category:document.getElementById('tCategory').value.trim(),
-    note:document.getElementById('tNote').value.trim()
-  });
-  if(error)return alert(error.message);
+  const payload={user_id:currentUser.id,type:document.getElementById('tType').value,amount:Number(document.getElementById('tAmount').value),date:document.getElementById('tDate').value,account_id:document.getElementById('tAccount').value,category:document.getElementById('tCategory').value.trim(),note:document.getElementById('tNote').value.trim()};
+  const q=id?db.from('transactions').update(payload).eq('id',id):db.from('transactions').insert(payload);
+  const {error}=await q;if(error)return alert(error.message);
   closeModal();await loadAll();render();
 }
 
@@ -1091,6 +1115,52 @@ async function deleteRecord(table,id){
   const {error}=await db.from(table).delete().eq('id',id);
   if(error)return alert(error.message);await loadAll();render();
 }
+
+function renderBorrowed(){
+  const total=borrowedTotalOutstanding(),excluded=borrowedFunds.filter(x=>x.include_in_assets===false).reduce((s,x)=>s+borrowedRemaining(x),0);
+  document.getElementById('main').innerHTML=`<div class="section-head"><div><div class="page-title">💸 借入款</div><div class="page-sub">別人借給你的錢，可選擇是否計入目前可計入總資產。</div></div><button class="primary" style="width:auto;margin:0" onclick="openBorrowedModal()">＋ 新增借入款</button></div>
+  <div class="cards"><div class="card"><div class="metric-label">尚未還款</div><div class="metric">${money(total)}</div></div><div class="card"><div class="metric-label">不計入資產</div><div class="metric">${money(excluded)}</div></div><div class="card"><div class="metric-label">筆數</div><div class="metric">${borrowedFunds.length}</div></div></div>
+  <div class="list">${borrowedFunds.map(x=>{const remain=borrowedRemaining(x),paid=Number(x.amount)-remain;return `<div class="card"><div class="section-head"><div><h3>${esc(x.person_name)}</h3><div class="small">${esc(x.description||'')} · ${dateText(x.borrow_date)}</div></div><span class="pill ${x.include_in_assets===false?'bad':'ok'}">${x.include_in_assets===false?'不計入資產':'計入資產'}</span></div><div>原始 ${money(x.amount)} · 已還 ${money(paid)} · <b>剩餘 ${money(remain)}</b></div><div class="progress"><div style="width:${pct(paid,x.amount)}%"></div></div><div class="actions" style="margin-top:12px">${remain>0?`<button class="primary" style="width:auto;margin:0" onclick="openBorrowedRepaymentModal('${x.id}')">💰 還款</button>`:''}<button class="ghost" onclick="openBorrowedDetail('${x.id}')">📋 明細</button><button class="ghost" onclick="openBorrowedModal('${x.id}')">✏️ 編輯</button><button class="danger" onclick="deleteBorrowed('${x.id}')">🗑️</button></div></div>`}).join('')||'<div class="card small">目前沒有借入款。</div>'}</div>`;
+}
+function openBorrowedModal(id=''){
+  const x=borrowedFunds.find(a=>a.id===id)||{},editing=!!id;
+  openModal(`<div class="modal-head"><h3>💸 ${editing?'編輯':'新增'}借入款</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveBorrowed(event,'${id}')"><div class="form-grid"><div><label>借款來源</label><input id="bfPerson" class="input" required value="${esc(x.person_name||'')}"></div><div><label>借入金額</label><input id="bfAmount" class="input" type="number" min="0.01" step="0.01" required value="${x.amount??''}"></div><div><label>收到帳戶</label><select id="bfAccount" class="select" required>${selectAccounts()}</select></div><div><label>借入日期</label><input id="bfDate" class="input" type="date" value="${x.borrow_date||today()}" required></div></div><label>用途／說明</label><input id="bfDesc" class="input" value="${esc(x.description||'')}"><label style="display:flex;gap:10px;align-items:center;color:var(--text);margin-top:16px"><input id="bfInclude" type="checkbox" ${x.include_in_assets===false?'':'checked'}> 計入目前可計入總資產</label><div class="small">取消後，錢仍會留在實際帳戶餘額，但未還本金會從 Dashboard 的可計入總資產扣除。</div><label>備註</label><input id="bfNote" class="input" value="${esc(x.note||'')}"><button class="primary">${editing?'儲存修改':'儲存借入款'}</button></form>`);
+  if(x.account_id)document.getElementById('bfAccount').value=x.account_id;
+}
+async function saveBorrowed(e,id=''){
+  e.preventDefault();const old=id?borrowedFunds.find(x=>x.id===id):null,paid=old?Number(old.amount)-borrowedRemaining(old):0,amount=Number(document.getElementById('bfAmount').value);
+  if(old&&amount<paid)return alert(`借入金額不能低於已還款合計 ${money(paid)}。`);
+  const payload={user_id:currentUser.id,person_name:document.getElementById('bfPerson').value.trim(),amount,account_id:document.getElementById('bfAccount').value,borrow_date:document.getElementById('bfDate').value,description:document.getElementById('bfDesc').value.trim(),include_in_assets:document.getElementById('bfInclude').checked,note:document.getElementById('bfNote').value.trim()};
+  const {error}=await (id?db.from('borrowed_funds').update(payload).eq('id',id):db.from('borrowed_funds').insert(payload));
+  if(error)return alert(error.message);closeModal();await loadAll();render();
+}
+function openBorrowedRepaymentModal(id,repaymentId=''){
+  const x=borrowedFunds.find(a=>a.id===id);if(!x)return;const r=borrowedRepayments.find(a=>a.id===repaymentId)||{},editing=!!repaymentId,current=editing?Number(r.amount||0):0,remain=borrowedRemaining(x)+current;
+  if(!editing&&borrowedRemaining(x)<=0)return alert('這筆借款已全部還清。');
+  if(!accounts.length){alert('請先建立帳戶。');setPage('accounts');return;}
+  openModal(`<div class="modal-head"><h3>💰 ${editing?'編輯':'記錄'}還款</h3><button class="ghost" onclick="closeModal()">關閉</button></div><form onsubmit="saveBorrowedRepayment(event,'${id}','${repaymentId}')"><div class="form-grid"><div><label>還款金額</label><input id="brAmount" class="input" type="number" min="0.01" max="${remain}" step="0.01" value="${r.amount??remain}" required></div><div><label>還款日期</label><input id="brDate" class="input" type="date" value="${r.repayment_date||today()}" required></div><div><label>還款帳戶</label><select id="brAccount" class="select" required>${selectAccounts()}</select></div></div><label>備註</label><input id="brNote" class="input" value="${esc(r.note||'')}">${editing?`<button type="button" class="danger" style="margin-top:12px" onclick="deleteBorrowedRepayment('${repaymentId}','${id}')">🗑️ 刪除</button>`:''}<button class="primary">${editing?'儲存修改':'確認還款'}</button></form>`);
+  if(r.account_id)document.getElementById('brAccount').value=r.account_id;
+}
+async function saveBorrowedRepayment(e,id,repaymentId=''){
+  e.preventDefault();const x=borrowedFunds.find(a=>a.id===id);if(!x)return;const amount=Number(document.getElementById('brAmount').value),current=repaymentId?Number(borrowedRepayments.find(r=>r.id===repaymentId)?.amount||0):0;
+  if(amount<=0||amount>borrowedRemaining(x)+current)return alert('還款金額超過尚未償還金額。');
+  const payload={user_id:currentUser.id,borrowed_fund_id:id,amount,repayment_date:document.getElementById('brDate').value,account_id:document.getElementById('brAccount').value,note:document.getElementById('brNote').value.trim()};
+  const {error}=await (repaymentId?db.from('borrowed_repayments').update(payload).eq('id',repaymentId):db.from('borrowed_repayments').insert(payload));
+  if(error)return alert(error.message);closeModal();await loadAll();openBorrowedDetail(id);
+}
+async function deleteBorrowedRepayment(rid,id){
+  if(!confirm('確定刪除這筆還款？'))return;const {error}=await db.from('borrowed_repayments').delete().eq('id',rid);if(error)return alert(error.message);
+  closeModal();await loadAll();openBorrowedDetail(id);
+}
+function openBorrowedDetail(id){
+  const x=borrowedFunds.find(a=>a.id===id);if(!x)return;const rs=borrowedRepayments.filter(r=>r.borrowed_fund_id===id),remain=borrowedRemaining(x);
+  openModal(`<div class="modal-head"><div><h3>📋 ${esc(x.person_name)}｜還款明細</h3><div class="small">原始 ${money(x.amount)} · 已還 ${money(Number(x.amount)-remain)} · 剩餘 ${money(remain)}</div></div><button class="ghost" onclick="closeModal()">關閉</button></div><div class="list" style="margin-top:14px">${rs.map(r=>`<div class="row"><div><b>${money(r.amount)}</b><div class="small">${dateText(r.repayment_date)}${r.note?' · '+esc(r.note):''}</div></div><div class="actions"><button class="ghost" onclick="openBorrowedRepaymentModal('${id}','${r.id}')">✏️</button><button class="danger" onclick="deleteBorrowedRepayment('${r.id}','${id}')">🗑️</button></div></div>`).join('')||'<div class="small">尚未還款。</div>'}</div><div class="actions" style="margin-top:14px">${remain>0?`<button class="primary" style="width:auto;margin:0" onclick="closeModal();openBorrowedRepaymentModal('${id}')">💰 記錄還款</button>`:''}<button class="ghost" onclick="closeModal();openBorrowedModal('${id}')">✏️ 修改借入款</button></div>`);
+}
+async function deleteBorrowed(id){
+  const x=borrowedFunds.find(a=>a.id===id);if(!x)return;if(!confirm(`確定刪除「${x.person_name}」這筆借入款？還款明細也會刪除。`))return;
+  const {error}=await db.from('borrowed_funds').delete().eq('id',id);if(error)return alert(error.message);closeModal();await loadAll();render();
+}
+
 function quickAdd(){
   if(currentPage==='dashboard'||currentPage==='transactions')openTransactionModal();
   else if(currentPage==='preorders')openPreorderModal();
@@ -1099,6 +1169,7 @@ function quickAdd(){
   else if(currentPage==='goals')openGoalModal();
   else if(currentPage==='common')openCommonExpenseModal();
   else if(currentPage==='store')openStorePrepaymentModal();
+  else if(currentPage==='borrowed')openBorrowedModal();
   else openTransactionModal();
 }
 
