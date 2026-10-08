@@ -27,9 +27,10 @@ main{padding:24px;min-width:0}.page-title{font-size:25px;font-weight:800;margin:
 .progress{height:8px;background:#eee7df;border-radius:999px;overflow:hidden;margin-top:10px}.progress>div{height:100%;background:var(--accent);border-radius:999px}
 .table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;font-size:13px}.table th,.table td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);white-space:nowrap}.table th{color:var(--muted);font-weight:600}
 .actions{display:flex;gap:8px;flex-wrap:wrap}.modal{position:fixed;inset:0;background:#3f393455;display:grid;place-items:center;padding:18px;z-index:20}.modal-card{width:min(620px,100%);max-height:90vh;overflow:auto;background:var(--card);border-radius:22px;padding:22px}.modal-head{display:flex;justify-content:space-between;align-items:center}.modal-head h3{margin:0}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
-.fab{position:fixed;right:20px;bottom:20px;width:58px;height:58px;border-radius:50%;background:var(--accent);color:white;font-size:25px;box-shadow:0 10px 25px #0002;z-index:10}.mobile-nav{display:none}
-@media(max-width:850px){.layout{display:block}.sidebar{display:none}main{padding:18px 14px 90px}.cards{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.mobile-nav{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fffdf9ef;backdrop-filter:blur(12px);border-top:1px solid var(--line);z-index:9;justify-content:space-around;padding:8px 4px}.mobile-nav button{background:transparent;color:var(--muted);font-size:11px;padding:7px}.mobile-nav button.active{color:var(--text);font-weight:700}.topbar{padding:12px 14px}.user{display:none}}
-@media(max-width:520px){.metric{font-size:20px}.form-grid{grid-template-columns:1fr}}
+.fab{position:fixed;right:18px;bottom:82px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:white;font-size:25px;box-shadow:0 10px 25px #0002;z-index:12}.mobile-nav{display:none}.more-sheet{position:fixed;inset:0;background:#3f393455;z-index:30;display:flex;align-items:flex-end}.more-panel{width:100%;background:var(--card);border-radius:24px 24px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -10px 30px #0002}.more-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.more-item{background:#f4eee8;color:var(--text);border-radius:14px;padding:13px;text-align:left}.more-close{width:100%;margin-top:12px;background:#eee7df;color:var(--text);padding:12px;border-radius:13px}
+@media(max-width:850px){.layout{display:block}.sidebar{display:none}main{padding:18px 14px 96px}.cards{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.mobile-nav{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;bottom:0;left:0;right:0;background:#fffdf9ef;backdrop-filter:blur(12px);border-top:1px solid var(--line);z-index:11;padding:6px 3px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -4px 18px #00000008}.mobile-nav button{background:transparent;color:var(--muted);font-size:11px;line-height:1.25;padding:5px 2px;min-width:0}.mobile-nav button.active{color:var(--text);font-weight:700}.topbar{padding:12px 14px}.user{display:none}}
+@media(max-width:520px){.metric{font-size:20px}.form-grid{grid-template-columns:1fr}.fab{right:16px;bottom:78px}}
+.form-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -84,17 +85,32 @@ main{padding:24px;min-width:0}.page-title{font-size:25px;font-weight:800;margin:
 <div class="mobile-nav">
 <button data-page="dashboard">🏠<br>總覽</button>
 <button data-page="transactions">🧾<br>記帳</button>
-<button data-page="preorders">🛍️<br>預購</button>
-<button data-page="installments">💳<br>分期</button>
-<button data-page="accounts">🏦<br>帳戶</button>
-<button data-page="search">🔎<br>查詢</button>
-<button data-page="common">👥<br>共同</button>
-<button data-page="store">🛍️<br>賣場</button>
-<button data-page="borrowed">💸<br>借入</button>
 <button data-page="budget">💰<br>預算</button>
-<button data-page="categories">🏷️<br>分類</button>
+<button data-page="accounts">🏦<br>帳戶</button>
+<button type="button" onclick="openMoreSheet()">☰<br>更多</button>
 </div>
-<button class="fab" onclick="quickAdd()">＋</button>
+<button class="fab" aria-label="新增" onclick="quickAdd()">＋</button>
+
+<div id="moreSheet" class="more-sheet hidden" onclick="if(event.target.id==='moreSheet')closeMoreSheet()">
+  <div class="more-panel">
+    <div class="section-head">
+      <div><h3 style="margin:0">更多功能</h3><div class="small">其他功能都放在這裡，手機畫面更清爽。</div></div>
+      <button class="ghost" onclick="closeMoreSheet()">關閉</button>
+    </div>
+    <div class="more-grid">
+      <button class="more-item" onclick="moreGo('preorders')">🛍️ 預購／待付款</button>
+      <button class="more-item" onclick="moreGo('installments')">💳 分期管理</button>
+      <button class="more-item" onclick="moreGo('bills')">🧾 固定繳費</button>
+      <button class="more-item" onclick="moreGo('goals')">🎯 儲蓄目標</button>
+      <button class="more-item" onclick="moreGo('common')">👥 共同費用</button>
+      <button class="more-item" onclick="moreGo('store')">🛍️ 賣場／預收款</button>
+      <button class="more-item" onclick="moreGo('borrowed')">💸 借入款</button>
+      <button class="more-item" onclick="moreGo('search')">🔎 查詢</button>
+      <button class="more-item" onclick="moreGo('categories')">🏷️ 分類管理</button>
+    </div>
+    <button class="more-close" onclick="closeMoreSheet()">完成</button>
+  </div>
+</div>
 </div>
 
 <div id="modal" class="modal hidden" onclick="if(event.target.id==='modal')closeModal()"><div class="modal-card" id="modalCard"></div></div>
@@ -1161,7 +1177,32 @@ async function deleteBorrowed(id){
   const {error}=await db.from('borrowed_funds').delete().eq('id',id);if(error)return alert(error.message);closeModal();await loadAll();render();
 }
 
-function quickAdd(){
+function openMoreSheet(){
+  document.getElementById('moreSheet').classList.remove('hidden');
+}
+function closeMoreSheet(){
+  document.getElementById('moreSheet').classList.add('hidden');
+}
+function moreGo(page){
+  closeMoreSheet();
+  setPage(page);
+}
+\nfunction quickAdd(){
+  if(window.matchMedia && window.matchMedia('(max-width:850px)').matches){
+    openModal(`<div class="modal-head"><div><h3>＋ 新增</h3><div class="small">選擇你要新增的項目</div></div><button class="ghost" onclick="closeModal()">關閉</button></div>
+      <div class="more-grid" style="margin-top:14px">
+        <button class="more-item" onclick="closeModal();openTransactionModal()">🧾 記一筆收入／支出</button>
+        <button class="more-item" onclick="closeModal();openTransferModal()">🔄 帳戶轉帳</button>
+        <button class="more-item" onclick="closeModal();openPreorderModal()">🛍️ 新增預購</button>
+        <button class="more-item" onclick="closeModal();openInstallmentModal()">💳 新增分期</button>
+        <button class="more-item" onclick="closeModal();openBillModal()">🧾 新增帳單</button>
+        <button class="more-item" onclick="closeModal();openGoalModal()">🎯 新增儲蓄目標</button>
+        <button class="more-item" onclick="closeModal();openCommonExpenseModal()">👥 新增共同費用</button>
+        <button class="more-item" onclick="closeModal();openStorePrepaymentModal()">🛍️ 新增賣場預收款</button>
+        <button class="more-item" onclick="closeModal();openBorrowedModal()">💸 新增借入款</button>
+      </div>`);
+    return;
+  }
   if(currentPage==='dashboard'||currentPage==='transactions')openTransactionModal();
   else if(currentPage==='preorders')openPreorderModal();
   else if(currentPage==='installments')openInstallmentModal();
@@ -1170,6 +1211,7 @@ function quickAdd(){
   else if(currentPage==='common')openCommonExpenseModal();
   else if(currentPage==='store')openStorePrepaymentModal();
   else if(currentPage==='borrowed')openBorrowedModal();
+  else if(currentPage==='budget')openBudgetModal(categories[0]?.id||'');
   else openTransactionModal();
 }
 
